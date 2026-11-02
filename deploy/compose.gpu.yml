@@ -1,0 +1,7 @@
+# NVIDIA GPU for the local model (needs nvidia-container-toolkit)
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: all, capabilities: [gpu]}]

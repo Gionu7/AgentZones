@@ -1,0 +1,23 @@
+from agentzones.knowledge import FixStore
+
+
+def test_add_merge_search_persist(tmp_path):
+    s = FixStore(tmp_path / "f.json")
+    f = s.add(problem="tool_ca_bundle", summary="point pip at system CA", steps=["pip config set global.cert x"],
+              verified_by=["a"], origin="a", symptoms="CERTIFICATE_VERIFY_FAILED pip")
+    s.merge({**f, "verified_by": ["b"]})
+    assert s.fixes[f["id"]]["verified_by"] == ["a", "b"]
+    assert s.search("tool_ca_bundle")[0]["id"] == f["id"]
+    assert s.search("clock_skew") == []
+    assert s.search(text="pip certificate")[0]["id"] == f["id"]
+    assert FixStore(tmp_path / "f.json").fixes[f["id"]]["verified_by"] == ["a", "b"]
+
+
+def test_teacher_answer_to_soft_labels():
+    from proxy_doctor.catalog import CLASSES
+    from proxy_doctor.distill.teacher import to_probs
+    p = to_probs({"problem": "tool_ca_bundle", "confidence": 0.6, "alternatives": {"untrusted_corp_ca": 0.4,
+                                                                                    "bogus": 0.9}})
+    assert abs(sum(p) - 1) < 1e-9
+    assert p[CLASSES.index("tool_ca_bundle")] == 0.6 and p[CLASSES.index("untrusted_corp_ca")] == 0.4
+    assert to_probs({}) == [1 / len(CLASSES)] * len(CLASSES)

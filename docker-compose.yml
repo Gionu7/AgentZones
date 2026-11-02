@@ -1,0 +1,53 @@
+# One zone + local model.   docker compose up -d     (dashboard: http://localhost:7700)
+# GPU: docker compose -f docker-compose.yml -f deploy/compose.gpu.yml up -d
+services:
+  ollama:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
+    environment:
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
+    volumes: [ollama:/root/.ollama]
+    restart: unless-stopped
+
+  model-pull:   # one-shot: download the model once into the ollama volume
+    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
+    depends_on: [ollama]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+    entrypoint: ["sh", "-c", "sleep 3; ollama pull ${MODEL_NAME:-qwen2.5:1.5b}"]
+    restart: "no"
+
+  zone:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+    image: agentzones:latest
+    depends_on: [ollama]
+    ports: ["${ZONE_PORT:-7700}:${ZONE_PORT:-7700}"]
+    environment:
+      ZONE_NAME: ${ZONE_NAME:-my-zone}
+      ZONE_PORT: ${ZONE_PORT:-7700}
+      ZONE_URL: ${ZONE_URL:-}
+      ZONE_SEED: ${ZONE_SEED:-}
+      ZONE_SECRET: ${ZONE_SECRET:-}
+      ZONE_API_TOKEN: ${ZONE_API_TOKEN:-}
+      ZONE_PROFILE: ${ZONE_PROFILE:-uniform}
+      MODEL_URL: http://ollama:11434/v1
+      MODEL_NAME: ${MODEL_NAME:-qwen2.5:1.5b}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,ollama}
+    volumes:
+      - ${ZONE_CONFIG_FILE:-./zone.yaml}:/config/zone.yaml:ro
+      - zone-data:/data
+    restart: unless-stopped
+
+volumes:
+  ollama:
+  zone-data:

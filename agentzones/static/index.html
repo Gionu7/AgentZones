@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Zone</title>
+<style>
+:root { --bg:#f6f7f9; --card:#fff; --fg:#1b1f24; --mute:#667085; --line:#e4e7ec; --acc:#2563eb; --ok:#16a34a; --bad:#dc2626; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0f1115; --card:#171a21; --fg:#e6e8eb; --mute:#98a2b3; --line:#2a2f3a; --acc:#60a5fa; --ok:#4ade80; --bad:#f87171; } }
+* { box-sizing:border-box } body { margin:0; font:14px/1.45 system-ui,sans-serif; background:var(--bg); color:var(--fg) }
+header { padding:16px 20px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:baseline; flex-wrap:wrap }
+h1 { font-size:18px; margin:0 } .mute { color:var(--mute) } code, pre { font:12px/1.4 ui-monospace,monospace }
+main { display:grid; gap:16px; padding:16px; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); max-width:1400px; margin:auto }
+section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; min-width:0 }
+h2 { font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--mute); margin:0 0 10px }
+.pill { display:inline-block; padding:1px 8px; border-radius:99px; border:1px solid var(--line); font-size:12px; margin:2px 4px 2px 0 }
+.ok { color:var(--ok) } .bad { color:var(--bad) }
+ul { list-style:none; margin:0; padding:0 } li { padding:6px 0; border-bottom:1px solid var(--line) } li:last-child { border:0 }
+button, select, input, textarea { font:inherit; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:6px 10px }
+button { cursor:pointer; background:var(--acc); color:#fff; border:0 } button.sec { background:var(--bg); color:var(--fg); border:1px solid var(--line) }
+textarea { width:100%; min-height:56px } .row { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 }
+pre { white-space:pre-wrap; word-break:break-word; background:var(--bg); padding:10px; border-radius:6px; max-height:420px; overflow:auto; margin:8px 0 0 }
+#events li { font-size:12px } svg { width:100%; height:160px }
+</style>
+</head>
+<body>
+<header><h1 id="title">Agent Zone</h1><span class="mute" id="sub"></span></header>
+<main>
+  <section><h2>This zone</h2><div id="info">loading...</div></section>
+  <section><h2>Peer zones (gossip)</h2><ul id="peers"></ul></section>
+  <section style="grid-column:1/-1"><h2>Ask the proxy doctor</h2>
+    <textarea id="q">pip install fails: SSL: CERTIFICATE_VERIFY_FAILED self-signed certificate in certificate chain</textarea>
+    <div class="row">
+      <select id="agent"></select>
+      <select id="sim"><option value="">real machine</option></select>
+      <button id="ask">Ask</button>
+    </div>
+    <pre id="answer" class="mute">-</pre>
+  </section>
+  <section><h2>Federated learning</h2>
+    <div id="fl" class="mute">disabled</div>
+    <svg id="chart" viewBox="0 0 300 160" preserveAspectRatio="none"></svg>
+    <div class="row"><button class="sec" data-fl="train">Train locally</button><button class="sec" data-fl="aggregate">Aggregate</button><button data-fl="round">Full round</button></div>
+  </section>
+  <section><h2>Verified fixes</h2><ul id="fixes"></ul></section>
+  <section><h2>Activity</h2><ul id="events"></ul></section>
+</main>
+<script>
+const token = new URLSearchParams(location.hash.slice(1)).get('token');
+const H = token ? {Authorization: 'Bearer ' + token} : {};
+const api = (p, o={}) => fetch(p, {...o, headers: {...H, 'Content-Type':'application/json', ...(o.headers||{})}}).then(r => r.json());
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ago = t => { const s = Math.round(Date.now()/1000 - t); return s < 60 ? s+'s ago' : Math.round(s/60)+'m ago'; };
+const SIMS = ['untrusted_corp_ca','tool_ca_bundle','proxy_auth_required','missing_proxy_env','proxy_unreachable','no_proxy_internal','dns_failure','clock_skew','healthy'];
+SIMS.forEach(s => sim.insertAdjacentHTML('beforeend', `<option>${s}</option>`));
+
+function chart(hist) {
+  const pts = hist.filter(h => h.phase !== 'train');
+  if (pts.length < 1) { document.getElementById('chart').innerHTML = ''; return; }
+  const n = Math.max(pts.length - 1, 1), xy = (i, v) => `${(i/n)*290+5},${150 - v*140}`;
+  const line = (k, col) => `<polyline fill="none" stroke="${col}" stroke-width="2" points="${pts.map((p,i)=>xy(i,p[k]??0)).join(' ')}"/>`;
+  document.getElementById('chart').innerHTML =
+    `<line x1="5" y1="10" x2="295" y2="10" stroke="var(--line)"/><line x1="5" y1="150" x2="295" y2="150" stroke="var(--line)"/>` +
+    line('local_acc','var(--mute)') + line('global_acc','var(--acc)');
+}
+
+async function refresh() {
+  try {
+    const i = await api('/api/info');
+    title.textContent = 'Agent Zone: ' + i.name; sub.textContent = i.url + ' - up ' + i.uptime_s + 's';
+    document.title = i.name + ' - Agent Zone';
+    info.innerHTML = `<div>Model: <b>${esc(i.model || 'none')}</b> <span class="${i.llm.ok?'ok':'bad'}">${i.llm.ok?'reachable':'unreachable'}</span></div>
+      <div>Agents: ${i.agents.map(a=>`<span class="pill">${esc(a.name)}</span>`).join('')}</div>
+      <div>Exposed tools: ${i.tools.map(t=>`<span class="pill">${esc(t.name)}</span>`).join('') || '<span class="mute">none</span>'}</div>
+      <div>Tags: ${i.tags.map(t=>`<span class="pill">${esc(t)}</span>`).join('')}</div>`;
+    if (!agent.options.length) i.agents.forEach(a => agent.insertAdjacentHTML('beforeend', `<option>${esc(a.name)}</option>`));
+    if (i.fl) {
+      const m = i.fl.metrics;
+      fl.innerHTML = `Task <code>${esc(i.fl.task)}</code>, round <b>${i.fl.round}</b>, ${i.fl.n_samples} local samples<br>
+        accuracy on local data <b>${(m.local_acc*100).toFixed(1)}%</b> - on shared benchmark <b style="color:var(--acc)">${(m.global_acc*100).toFixed(1)}%</b>`;
+      chart(i.fl.history);
+    }
+    const ps = await api('/api/peers');
+    peers.innerHTML = ps.map(p => `<li><b>${esc(p.name)}</b> <span class="mute">${esc(p.url)} - ${ago(p.last_seen)}</span><br>
+      ${(p.card.agents||[]).map(a=>`<span class="pill">${esc(a.name)}</span>`).join('')}
+      ${(p.card.tags||[]).map(t=>`<span class="pill mute">${esc(t)}</span>`).join('')}</li>`).join('') || '<li class="mute">no peers yet</li>';
+    const fx = await api('/api/fixes');
+    fixes.innerHTML = fx.map(f => `<li><b>${esc(f.summary)}</b> <span class="pill">${esc(f.problem)}</span><br>
+      <span class="mute">verified by ${f.verified_by.map(esc).join(', ') || '-'} (origin ${esc(f.origin)})</span></li>`).join('') || '<li class="mute">none yet</li>';
+    const ev = await api('/api/events');
+    events.innerHTML = ev.slice(-25).reverse().map(e => `<li><span class="mute">${new Date(e.t*1000).toLocaleTimeString()}</span> <span class="pill">${esc(e.kind)}</span> ${esc(e.msg)}</li>`).join('');
+  } catch (e) { sub.textContent = 'error: ' + e; }
+}
+ask.onclick = async () => {
+  answer.textContent = 'thinking...';
+  const ctx = sim.value ? {simulate: sim.value} : null;
+  const r = await api(`/api/agents/${agent.value}/ask`, {method:'POST', body: JSON.stringify({question: q.value, context: ctx})});
+  answer.textContent = (r.answer || r.error || '') + '\n\n' + JSON.stringify(r.trace || r.steps || [], null, 1);
+  refresh();
+};
+document.querySelectorAll('[data-fl]').forEach(b => b.onclick = async () => { await api('/api/fl/' + b.dataset.fl, {method:'POST'}); refresh(); });
+refresh(); setInterval(refresh, 2500);
+</script>
+</body>
+</html>

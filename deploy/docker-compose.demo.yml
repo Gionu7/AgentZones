@@ -1,0 +1,37 @@
+# Three zones on one Docker host, simulating three sites. No model needed
+# (explanations fall back to templates); add `--profile llm` to also start Ollama.
+#   docker compose -f deploy/docker-compose.demo.yml up -d --build
+#   python scripts/demo.py --no-launch --zones http://localhost:7701 http://localhost:7702 http://localhost:7703
+x-zone: &zone
+  build: {context: .., dockerfile: deploy/Dockerfile}
+  image: agentzones:latest
+  volumes: [../examples/demo:/config:ro]
+  restart: unless-stopped
+
+x-env: &env
+  ZONE_HOST: 0.0.0.0
+  ZONE_SECRET: ${ZONE_SECRET:-hackathon-demo-secret}
+  MODEL_PROVIDER: ${MODEL_PROVIDER:-none}
+  MODEL_URL: http://ollama:11434/v1
+  MODEL_NAME: ${MODEL_NAME:-qwen2.5:1.5b}
+
+services:
+  zone-a:
+    <<: *zone
+    ports: ["7701:7701"]
+    environment: {<<: *env, ZONE_CONFIG: /config/zone-a.yaml, ZONE_URL: "http://zone-a:7701", ZONE_SEED: "", ZONE_DATA: /data/a}
+  zone-b:
+    <<: *zone
+    ports: ["7702:7702"]
+    environment: {<<: *env, ZONE_CONFIG: /config/zone-b.yaml, ZONE_URL: "http://zone-b:7702", ZONE_SEED: "http://zone-a:7701", ZONE_DATA: /data/b}
+  zone-c:
+    <<: *zone
+    ports: ["7703:7703"]
+    environment: {<<: *env, ZONE_CONFIG: /config/zone-c.yaml, ZONE_URL: "http://zone-c:7703", ZONE_SEED: "http://zone-b:7702", ZONE_DATA: /data/c}
+  ollama:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
+    profiles: [llm]
+    volumes: [ollama:/root/.ollama]
+
+volumes:
+  ollama:
