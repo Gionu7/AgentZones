@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 from . import __version__
 from .agent import Agent, AskContext, build_agent
+from .compute import ComputeShare, ModelRouter
 from .config import ZoneConfig
 from .federated import FederatedNode, load_task, task_kwargs
 from .identity import Identity, KeyPins, verify_sig
@@ -32,6 +33,8 @@ class Zone:
         self.data_dir = Path(cfg.data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.llm = LLM(cfg.model)
+        self.compute = ComputeShare(self, cfg.compute)
+        self.router = ModelRouter(self)
         self.tools = ToolRegistry()
         self.peer_client = PeerClient(cfg.name, cfg.security.network_secret)
         self.peers = PeerTable(cfg.name, cfg.url, cfg.discovery.peers, cfg.discovery.peer_ttl_s,
@@ -62,7 +65,10 @@ class Zone:
         if self.cfg.federated.enabled:
             f = self.cfg.federated
             task = load_task(f.task, **task_kwargs(f.data, self.data_dir, self.name))
-            self.fl = FederatedNode(task, f.local_epochs, f.learning_rate, f.dp_noise_std)
+            self.fl = FederatedNode(task, f.local_epochs, f.learning_rate, f.dp_noise_std,
+                                    state_path=self.data_dir / "fl_state.npz", aggregation=f.aggregation,
+                                    trim_fraction=f.trim_fraction, max_sample_ratio=f.max_sample_ratio,
+                                    max_update_ratio=f.max_update_ratio, zone_name=self.name)
         self._tasks.append(asyncio.create_task(self._gossip_loop()))
         if self.fl and self.cfg.federated.auto_rounds > 0:
             self._tasks.append(asyncio.create_task(self._fl_loop()))
@@ -121,6 +127,8 @@ class Zone:
             "fl_task": self.fl.task.name if self.fl else None,
             "model": self.cfg.model.model if self.llm.enabled else None,
             "pubkey": self.identity.public_b64,
+            "compute": self.compute.card(),
+            "peers": sorted(p.name for p in self.peers.alive() if p.name),  # for the network map
             "ts": time.time(),
         }
 
@@ -138,6 +146,53 @@ class Zone:
         key = self.pins.key_for(zone)
         return bool(key) and verify_sig(key, data, sig)
 
+    # ------------------------------------------------------------------ network map
+    def network(self, since: float = 0.0) -> dict[str, Any]:
+        """Nodes, links and recent cross-zone traffic as seen from this zone (for the map)."""
+        def node(card: dict[str, Any], direct: bool, me: bool = False, url: str = "") -> dict[str, Any]:
+            c = card.get("compute") or {}
+            return {"name": card.get("name"), "url": card.get("url") or url, "self": me, "direct": direct,
+                    "model": c.get("model") or card.get("model"), "size_b": c.get("size_b"), "gpu": c.get("gpu"),
+                    "share": c.get("share", False), "active": c.get("active", 0),
+                    "max_concurrent": c.get("max_concurrent", 0), "served": c.get("served", 0),
+                    "borrowed": c.get("borrowed", 0), "tags": card.get("tags", []),
+                    "agents": [a.get("name") for a in card.get("agents", [])], "fl_task": card.get("fl_task")}
+        me = self.card()
+        nodes = {self.name: node(me, True, me=True)}
+        links: set[tuple[str, str]] = set()
+        for p in self.peers.alive():
+            if not p.name:
+                continue
+            nodes[p.name] = node(p.card, True, url=p.url)
+            links.add(tuple(sorted((self.name, p.name))))
+        for p in self.peers.alive():
+            for other in p.card.get("peers", []):
+                if other not in nodes:
+                    nodes[other] = {"name": other, "self": False, "direct": False}
+                if p.name and other != p.name:
+                    links.add(tuple(sorted((p.name, other))))
+        flows = []
+        for e in self.events:
+            if e["t"] <= since:
+                continue
+            targets = e.get("peers") or ([e["peer"]] if e.get("peer") else [])
+            for t in targets:
+                if not t or t == self.name:
+                    continue
+                src, dst = (t, self.name) if e.get("direction") == "in" else (self.name, t)
+                flows.append({"t": e["t"], "kind": e["kind"], "src": src, "dst": dst, "msg": e["msg"]})
+        recent = time.time() - 600
+        for e in self.events:  # senders we don't know as peers (e.g. a rogue client) show up as outsiders
+            if e["t"] < recent:
+                continue
+            for n in e.get("peers") or ([e["peer"]] if e.get("peer") else []):
+                if n and n not in nodes and n != self.name:
+                    nodes[n] = {"name": n, "self": False, "direct": False, "outsider": True}
+        fl = self.fl.status() if self.fl else None
+        return {"self": self.name, "t": time.time(), "nodes": list(nodes.values()),
+                "links": [list(x) for x in sorted(links)], "flows": flows[-100:],
+                "fl": {"round": fl["round"], **fl["metrics"]} if fl else None, "fixes": len(self.fixes.fixes)}
+
     # ------------------------------------------------------------------ gossip
     async def _gossip_loop(self) -> None:
         while True:
@@ -146,7 +201,7 @@ class Zone:
                 await gossip_once(self.peers, self.peer_client, self.card())
                 after = {p.name for p in self.peers.alive()}
                 for n in sorted(after - before):
-                    self.event("peer", f"discovered peer zone {n}")
+                    self.event("peer", f"discovered peer zone {n}", peer=n, direction="in")
                 for n in sorted(before - after):
                     self.event("peer", f"lost peer zone {n}")
             except Exception:
@@ -159,7 +214,8 @@ class Zone:
         if self.peers.get(card.get("name", "")) is None:
             return {"error": "card refused"}
         if is_new and card.get("name") and card.get("name") != self.name:
-            self.event("peer", f"peer zone {card.get('name')} announced itself")
+            self.event("peer", f"peer zone {card.get('name')} announced itself", peer=card.get("name"),
+                       direction="in")
         return {"self": self.card(), "peers": self.peers.listing()}
 
     # ------------------------------------------------------------------ asking
@@ -195,7 +251,8 @@ class Zone:
         if self.name in ctx.trace or not self._dedupe(ctx.request_id + ":" + payload.get("agent", "")):
             return {"zone": self.name, "error": "loop detected"}
         ctx.trace.append(self.name)
-        self.event("ask", f"question from {ctx.origin} for agent {payload.get('agent')}",
+        sender = ctx.trace[-1] if ctx.trace else ctx.origin
+        self.event("ask", f"question from {ctx.origin} for agent {payload.get('agent')}", peer=sender, direction="in",
                    question=payload.get("question", "")[:200])
         return await self.ask(payload.get("agent", ""), payload.get("question", ""), payload.get("context"), ctx)
 
@@ -221,7 +278,8 @@ class Zone:
                 targets.append((p, pick))
         if not targets:
             return []
-        self.event("ask", f"asking {len(targets)} peer zone(s): {', '.join(p.name or '?' for p, _ in targets)}")
+        self.event("ask", f"asking {len(targets)} peer zone(s): {', '.join(p.name or '?' for p, _ in targets)}",
+                   peers=[p.name for p, _ in targets], direction="out")
 
         async def one(p, agent_name):
             try:
@@ -237,7 +295,7 @@ class Zone:
         p = self.peers.get(zone)
         if not p:
             raise KeyError(f"unknown or offline zone {zone}")
-        self.event("tool", f"calling {tool} on zone {zone}")
+        self.event("tool", f"calling {tool} on zone {zone}", peer=zone, direction="out")
         res = await self.peer_client.request(p.url, "POST", "/p2p/tools/call",
                                              {"tool": tool, "arguments": arguments or {}}, timeout=120)
         if res.get("error"):
@@ -249,7 +307,7 @@ class Zone:
         tool = self.tools.tools.get(name)
         if not tool or not tool.exposed:
             return {"error": f"tool {name} is not exposed by zone {self.name}"}
-        self.event("tool", f"zone {caller} called {name}")
+        self.event("tool", f"zone {caller} called {name}", peer=caller, direction="in")
         try:
             return {"result": await tool.handler(payload.get("arguments") or {})}
         except Exception as exc:
@@ -265,7 +323,7 @@ class Zone:
                 return None
         sent = [n for n in await asyncio.gather(*(one(p) for p in self.peers.alive())) if n]
         if sent:
-            self.event("fix", f"shared fix '{fix['summary']}' with {', '.join(sent)}")
+            self.event("fix", f"shared fix '{fix['summary']}' with {', '.join(sent)}", peers=sent, direction="out")
         return sent
 
     def add_verified_fix(self, **kw: Any) -> dict[str, Any]:
@@ -276,17 +334,18 @@ class Zone:
         for check in self.fix_validators:
             reason = check(fix)
             if reason:
-                self.event("security", f"rejected fix from {caller}: {reason}")
+                self.event("security", f"rejected fix from {caller}: {reason}", peer=caller, direction="in")
                 return {"ok": False, "reason": reason}
         try:
             merged, n_new, n_bad = self.fixes.merge(fix)
         except FixRejected as exc:
-            self.event("security", f"rejected fix from {caller}: {exc}")
+            self.event("security", f"rejected fix from {caller}: {exc}", peer=caller, direction="in")
             return {"ok": False, "reason": str(exc)}
         if n_bad:
-            self.event("security", f"ignored {n_bad} invalid attestation(s) in fix from {caller}")
+            self.event("security", f"ignored {n_bad} invalid attestation(s) in fix from {caller}", peer=caller,
+                       direction="in")
         if n_new:
-            self.event("fix", f"received fix from {caller}: {merged['summary']} "
+            self.event("fix", peer=caller, direction="in", msg=f"received fix from {caller}: {merged['summary']} "
                               f"(verified by {', '.join(merged['verified_by'])})")
         res = {"ok": True, "id": merged["id"], "verified_by": merged["verified_by"]}
         if n_bad:
@@ -316,7 +375,16 @@ class Zone:
                 return None
         payloads = [r for r in await asyncio.gather(*(one(p) for p in peers)) if r]
         rec = self.fl.aggregate(payloads)
-        self.event("fl", f"aggregated with {len(payloads)} peer(s) (round {rec['round']}), "
+        for p in payloads:
+            self.event("fl", f"pulled model weights from {p['zone']}", peer=p["zone"], direction="in")
+        for r in rec["rejected"]:
+            self.event("security", f"FL: rejected weights from {r['zone']} "
+                                   f"({r['distance_ratio']}x further from the median than usual)", peer=r["zone"],
+                       direction="in")
+        for c in rec["capped"]:
+            self.event("security", f"FL: {c['zone']} claimed {c['claimed']} samples, counted {c['counted']}",
+                       peer=c["zone"], direction="in")
+        self.event("fl", f"aggregated with {len(rec['peers'])} peer(s) (round {rec['round']}, {rec['method']}), "
                          f"global acc={rec.get('global_acc', 0):.3f}")
         return rec
 

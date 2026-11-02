@@ -24,6 +24,12 @@ security:
   api_token: ${ZONE_API_TOKEN:-}       # protects /api/* from non-local callers
   allowed_cidrs: []                    # e.g. ["10.0.0.0/8"]
 
+compute:
+  share: ${ZONE_SHARE_MODEL:-false}    # lend this zone's model to peers (e.g. on an idle GPU server)
+  max_concurrent: 2
+  # size_b: 7                          # parsed from the model name if omitted
+  # accept_from: [zone-a, zone-b]      # empty = every zone of the network
+
 mcp_servers:
   - name: proxy
     command: python
@@ -39,9 +45,11 @@ agents:
       confidence_threshold: 0.75
       investigate_with_llm: true   # local LLM investigates when classifier + peers stay unsure
       investigate_below: 0.5
+      learn_from_verified: true    # verified diagnoses become local FL training data (never leave the zone)
       auto_apply: false                # real machine: propose fixes, don't apply
   - name: assistant
     kind: llm
+    model_route: local                 # local | largest | any | <zone>: borrow a bigger model from the network
     description: General assistant using this zone's tools and peers
     system_prompt: You are an IT helper inside an Agent Zone. Use tools to check facts before answering.
     tools: ["proxy.*", "zone.search_fixes"]
@@ -51,4 +59,5 @@ federated:
   task: proxy_doctor.student:ProxyStudentTask
   data:
     profile: ${ZONE_PROFILE:-uniform}  # stand-in for local incident data (see docs/FEDERATED.md)
-    n_samples: 400
+    n_samples: 400                     # synthetic bootstrap; lower it as verified real cases accumulate
+  aggregation: fedavg                  # fedavg (sample counts capped) | median | trimmed_mean

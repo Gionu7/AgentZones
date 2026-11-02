@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +35,7 @@ from agentzones.llm import LLMUnavailable
 
 from .catalog import CLASSES, DESCRIPTIONS, FIXES, render_fix, validate_fix
 from .features import featurize_many
-from .student import ProxyStudentTask, Student, one_hot
+from .student import VERIFIED_CASES, ProxyStudentTask, Student, one_hot
 from .synth import make_dataset
 
 log = logging.getLogger(__name__)
@@ -80,6 +81,13 @@ class ProxyDoctor(Agent):
         self.threshold = float(o.get("confidence_threshold", 0.75))
         self.investigate_below = float(o.get("investigate_below", 0.5))
         self.investigate = bool(o.get("investigate_with_llm", True))
+        self.investigate_route = str(o.get("investigate_route", "local"))
+        # borrow a bigger model from the network when ours fails or is unsure ("" = never)
+        self.escalate_route = str(o.get("escalate_route", "largest"))
+        self.escalate_below = float(o.get("escalate_below", 0.6))
+        # learning loop: verified diagnoses become local training data for the federated student
+        self.learn = bool(o.get("learn_from_verified", True))
+        self.learn_simulated = bool(o.get("learn_from_simulated", False))
         self.auto_apply = bool(o.get("auto_apply", True))
         self.share = bool(o.get("share_fixes", True))
         self.use_llm = bool(o.get("explain_with_llm", True))
@@ -120,9 +128,31 @@ class ProxyDoctor(Agent):
                 "diagnosis": d, "fixes": fixes[:2]}
 
     # ------------------------------------------------------------------ LLM investigation
+    def _bigger_peer_model(self) -> bool:
+        try:
+            cands = self.zone.router.candidates(self.escalate_route)
+        except Exception:
+            return False
+        return bool(cands) and cands[0] is not None
+
     async def _investigate(self, question: str, obs: dict[str, Any], hints: dict[str, Any]) -> dict[str, Any] | None:
-        if not (self.investigate and self.zone.llm.enabled):
+        """Investigate with our model; escalate to a bigger model in the network when it fails or is unsure."""
+        if not self.investigate:
             return None
+        res = None
+        if self.zone.llm.enabled or self.investigate_route != "local":
+            res = await self._investigate_once(question, obs, hints, self.investigate_route)
+        weak = res is None or "error" in res or res.get("problem") == "unknown" or \
+            res.get("confidence", 0) < self.escalate_below
+        if weak and self.escalate_route and self._bigger_peer_model():
+            first = res
+            res = await self._investigate_once(question, obs, hints, self.escalate_route)
+            if first is not None:
+                res["escalated_from"] = {k: first.get(k) for k in ("problem", "confidence", "error", "model_zone")}
+        return res
+
+    async def _investigate_once(self, question: str, obs: dict[str, Any], hints: dict[str, Any],
+                                route: str) -> dict[str, Any]:
         live = not obs.get("simulated")  # on a simulated machine, live checks would contradict the simulation
         tools = [t for t in (self.zone.tools.tools.get(f"{self.mcp}.{n}") for n in INVESTIGATION_TOOLS)
                  if t is not None] if live else []
@@ -132,18 +162,21 @@ class ProxyDoctor(Agent):
         user = (f"User question: {question}\nObservation: {json.dumps(sanitize(obs), default=str)}\n"
                 f"Classifier and peer opinions: {json.dumps(hints, default=str)}")
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        served: list[str] = []
         try:
             text, steps, err = await asyncio.wait_for(
                 run_tool_loop(self.zone, messages, tools, max_steps=int(self.cfg.options.get("investigate_steps", 6)),
-                              json_mode=True),
+                              json_mode=True, route=route, served_by=served),
                 timeout=float(self.cfg.options.get("llm_timeout_s", 90)))
         except asyncio.TimeoutError:
-            return {"error": "investigation timed out", "checks": []}
+            return {"error": "investigation timed out", "checks": [], "route": route}
+        model_zone = served[-1] if served else None
         if err:
-            return {"error": err, "checks": steps}
+            return {"error": err, "checks": steps, "route": route, "model_zone": model_zone}
         ans = parse_json_object(text)
         if not ans:
-            return {"error": "investigator did not return JSON", "raw": (text or "")[:500], "checks": steps}
+            return {"error": "investigator did not return JSON", "raw": (text or "")[:500], "checks": steps,
+                    "route": route, "model_zone": model_zone}
         problem = ans.get("problem") if ans.get("problem") in CLASSES else "unknown"
         try:
             conf = min(max(float(ans.get("confidence", 0.5)), 0.0), 1.0)
@@ -151,7 +184,8 @@ class ProxyDoctor(Agent):
             conf = 0.5
         nxt = ans.get("next_checks") if isinstance(ans.get("next_checks"), list) else []
         return {"problem": problem, "confidence": conf, "reasoning": str(ans.get("reasoning", ""))[:1000],
-                "next_checks": [str(x)[:200] for x in nxt][:5], "checks": steps}
+                "next_checks": [str(x)[:200] for x in nxt][:5], "checks": steps, "route": route,
+                "model_zone": model_zone}
 
     # ------------------------------------------------------------------ local side
     async def ask(self, question: str, context: dict[str, Any] | None, ctx: AskContext) -> dict[str, Any]:
@@ -256,10 +290,25 @@ class ProxyDoctor(Agent):
                                              platform=obs.get("os", "any"),
                                              evidence={"simulated": obs.get("simulated", False)})
             self.zone.event("fix", f"verified fix for {problem}: {plan['summary']} (signed)")
+            if self._record_case(obs, problem):
+                result["learned"] = True
             if self.share:
                 result["shared_with"] = await self.zone.share_fix(fix)
         result["answer"] = await self._explain(question, result)
         return result
+
+    def _record_case(self, obs: dict[str, Any], problem: str) -> bool:
+        """Append a verified (observation, problem) pair to the zone's local training data.
+        The file stays on this machine; federated learning shares only the resulting weights."""
+        if not self.learn or (obs.get("simulated") and not self.learn_simulated):
+            return False
+        rec = {"obs": {**sanitize(obs), "question": obs.get("question", "")}, "label": problem,
+               "source": "verified", "simulated": bool(obs.get("simulated")), "ts": round(time.time(), 3)}
+        with (self.zone.data_dir / VERIFIED_CASES).open("a") as f:
+            f.write(json.dumps(rec, default=str) + "\n")
+        n = sum(1 for _ in (self.zone.data_dir / VERIFIED_CASES).open())
+        self.zone.event("learn", f"recorded verified case #{n} ({problem}) for local training")
+        return True
 
     async def _explain(self, question: str, result: dict[str, Any]) -> str:
         d = result["diagnosis"]

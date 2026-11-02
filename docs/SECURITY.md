@@ -10,6 +10,7 @@
 | Zone | MCP servers | stdio (child process) or HTTP | yes | Keep HTTP MCP servers on localhost or the pod network |
 | Ollama / build | Model and image registries | HTTPS via corporate proxy | setup only | `registry.ollama.ai`, `huggingface.co`, `ghcr.io`, Docker Hub, PyPI |
 | Proxy Doctor | Test targets | HTTPS via proxy | when diagnosing | HEAD requests to e.g. `pypi.org`, plus the internal URL you name |
+| Zone | Lending zone | TCP 7700 `/p2p/llm/chat` | optional | Prompts go to the zone whose model is borrowed. Only zones with `compute.share` serve them |
 
 Zones never need inbound internet access. A zone that only asks questions (a laptop behind NAT) still works:
 it gossips outward and peers answer on the same connection. It is simply not reachable for questions from
@@ -26,6 +27,17 @@ other zones.
     ever displayed or run.
 * **MCP gateway (`/mcp`):** same access rule as `/api/*`. In addition, requests with a browser `Origin` that
   is not localhost are refused, which protects against DNS rebinding from a web page.
+* **Compute sharing:**
+  * Off by default (`compute.share: false`).
+  * `accept_from` limits which zones may borrow the model, and `max_concurrent` caps the load.
+  * A lending zone runs only its own model, with no further routing, and never executes tools for the
+    borrower. Borrowed prompts contain whatever the borrowing agent sends: for Proxy Doctor, the same
+    diagnostic observation it already shares with peers. Agents whose prompts must not leave the site should
+    keep `model_route: local`.
+* **OpenAI-compatible gateway (`/v1/*`):** same access rule as `/api/*`.
+* **Federated learning:** weights only. Shape and finiteness checks, distance-based outlier rejection,
+  sample-count caps, and optional median or trimmed-mean aggregation against poisoned peers. Verified cases
+  stay in `data_dir`.
 * **LLM investigator:** read-only tools only. Its output must be a catalog class or `unknown`, and `unknown`
   stops the flow without changing anything.
 * **Request signing:** `security.network_secret` is shared by all zones in one network. Every peer request

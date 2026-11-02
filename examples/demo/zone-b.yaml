@@ -10,7 +10,11 @@ tags: [build-servers]
 model:
   provider: ${MODEL_PROVIDER:-openai}
   base_url: ${MODEL_URL:-http://localhost:11434/v1}
-  model: ${MODEL_NAME:-qwen2.5:1.5b}
+  model: ${MODEL_NAME_B:-qwen2.5:7b}   # zone-b plays the idle GPU server with a bigger model
+
+compute:
+  share: true                  # lend the model to zone-a / zone-c (POST /p2p/llm/chat)
+  max_concurrent: 2
 
 discovery:
   peers: ["${ZONE_SEED:-http://127.0.0.1:7701}"]
@@ -37,6 +41,7 @@ agents:
       confidence_threshold: 0.75
       investigate_with_llm: true   # local LLM investigates when classifier + peers stay unsure
       investigate_below: 0.5
+      learn_from_simulated: true   # demo: simulated verified cases also feed local training
       auto_apply: true          # simulated machines only; real machines need PROXY_DOCTOR_ALLOW_APPLY=1
       explain_with_llm: true    # falls back to a template if the model is not reachable
   - name: assistant

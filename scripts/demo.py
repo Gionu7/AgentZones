@@ -14,7 +14,11 @@ Story
   5. After FL    zone-a now diagnoses a Kubernetes-style NO_PROXY problem on its own.
   6. Trust       a rogue client with the network secret pushes a "fix" with a malicious command
                  and a forged "verified by zone-b": zone-a refuses it.
-  7. LLM         (only with MODEL_PROVIDER=openai) the local LLM investigates a case and votes.
+  7. Compute     (only with MODEL_PROVIDER=openai) zone-a borrows zone-b's bigger model via /v1 "largest".
+  8. LLM         (only with MODEL_PROVIDER=openai) the local LLM investigates a case and votes,
+                 escalating to the bigger model when unsure.
+  Throughout: verified diagnoses become local training data (learning loop), and the network
+  map at http://127.0.0.1:7701/map shows zones, links and live traffic.
 """
 
 from __future__ import annotations
@@ -111,7 +115,8 @@ def accs(urls):
 
 def show_acc(urls, label):
     a = accs(urls)
-    cells = "  ".join(f"{n}: local {m['local_acc']:.0%} / benchmark {B}{m['global_acc']:.0%}{X}" for n, m in a.items())
+    cells = "  ".join(f"{n}: local {m['local_acc']:.0%} / benchmark {B}{m['global_acc']:.0%}{X}"
+                      f" ({m.get('verified_cases', 0)} verified)" for n, m in a.items())
     print(f"  {label:<14} {cells}")
 
 
@@ -193,11 +198,22 @@ def main() -> None:
         rogue_fix(a)
 
         if os.environ.get("MODEL_PROVIDER", "none") != "none":
-            h("7. LLM investigation (local model)")
+            h("7. Borrowing a bigger model: zone-a asks the network for its largest model")
+            models = get(a, "/v1/models")["data"]
+            print("  network models: " + ", ".join(m["id"] for m in models if "/" in m["id"]))
+            r = post(a, "/v1/chat/completions", {"model": "largest", "messages": [
+                {"role": "user", "content": "In one sentence: why does pip fail behind a TLS-intercepting proxy?"}]})
+            if "choices" in r:
+                print(f"  served by {r['model']}: {r['choices'][0]['message']['content'][:200]}")
+            else:
+                print(f"  {R}no model answered{X}: {r}")
+
+            h("8. LLM investigation (escalates to the bigger model if the local one is unsure)")
             r = post(a, "/api/agents/proxy-doctor/ask", {"question": "npm install fails: SELF_SIGNED_CERT_IN_CHAIN",
                      "context": {"simulate": "untrusted_corp_ca", "investigate": True}})
             inv = r.get("investigation") or {}
-            print(f"  LLM verdict : {inv.get('problem')} ({inv.get('confidence', 0):.0%}) {inv.get('error', '')}")
+            print(f"  LLM verdict : {inv.get('problem')} ({inv.get('confidence', 0):.0%}) on {inv.get('model_zone')} "
+                  f"{inv.get('error', '')}")
             print(f"  reasoning   : {inv.get('reasoning', '')[:300]}")
             print(f"  decision    : {r['diagnosis']['problem']}")
 

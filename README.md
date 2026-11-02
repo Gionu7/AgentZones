@@ -13,6 +13,15 @@ LLM investigates. It verifies a fix before sharing it, and signs it so other zon
 Every zone is also an **MCP server**, so an IDE assistant (Claude Code, Claude Desktop, VS Code) can plug into
 the whole zone network.
 
+Zones **share idle compute**. A zone can lend its model to peers, for example an idle GPU server running a 7B
+model. A laptop with a 1.5B model can then borrow it for hard cases. Each zone also exposes an
+**OpenAI-compatible endpoint** (`/v1/chat/completions`) backed by every model in the network.
+
+Zones **learn from their own work**. Every verified diagnosis becomes local training data for federated learning.
+That data never leaves the zone, and the aggregation step rejects poisoned updates.
+
+A live **network map** at `/map` shows the zones, the links between them and the traffic flowing across them.
+
 ```
      site A (dev laptops)            site B (build VMs)            site C (Kubernetes)
   +------------------------+     +------------------------+     +------------------------+
@@ -79,6 +88,23 @@ federated: {enabled: true, task: proxy_doctor.student:ProxyStudentTask}
 
 `agentzone init` writes a commented starter file. Any value can be written as `${ENV_VAR:-default}`.
 
+## Use the network's models (compute sharing)
+
+```yaml
+compute: {share: true, max_concurrent: 2}       # on the GPU server: lend its model to peers
+agents:
+  - {name: assistant, kind: llm, model_route: largest}   # on a laptop: borrow the biggest model in the network
+```
+
+The routes are `local`, `largest` (the biggest model with free capacity), `any` (the least loaded) and `<zone>`.
+If the chosen model is busy or refuses, the router falls back to the next candidate and then to the local model.
+Proxy Doctor's investigator escalates to `largest` on its own when the local model is unsure.
+
+Every zone is also an OpenAI-compatible gateway, so any OpenAI client can use the network's models. Point it
+at `http://127.0.0.1:7700/v1` and use model `largest`, `local`, `any` or `<zone>`; `GET /v1/models` lists
+what is available. For example, `make_dataset.py --teacher-url http://127.0.0.1:7700/v1 --teacher-model largest`
+labels teacher data on whichever zone has the biggest model.
+
 ## Use the zone network from your IDE (MCP)
 
 Every zone serves MCP at `http://<zone>:7700/mcp`. Its tools are `list_zones`, `ask_agent` (this zone or any
@@ -117,13 +143,15 @@ agentzone mcp                              stdio MCP server for IDE assistants
 |---|---|---|
 | Zone runtime | `agentzones/zone.py`, `server.py` | FastAPI app: local API, dashboard, peer API under `/p2p/*` |
 | Discovery | `agentzones/peers.py` | Gossip from seed peers, peer cards, TTL expiry, no registry |
+| Compute sharing | `agentzones/compute.py` | Lend the local model to peers, model routing with fallback, OpenAI-compatible `/v1` gateway |
+| Network map | `agentzones/static/map.html`, `/api/network` | Live map of zones, links, models and cross-zone traffic |
 | Security | `agentzones/security.py` | HMAC-SHA256 request signing, replay window, CIDR allow-list, API token |
 | Identity | `agentzones/identity.py` | Ed25519 key per zone, key pinning, signed attestations of verified fixes |
 | MCP gateway | `agentzones/zone_mcp.py` | The zone as an MCP server (`/mcp` and `agentzone mcp`) for IDE assistants |
 | MCP | `agentzones/mcp_lite.py` | Dependency-free MCP client (stdio and streamable HTTP) and server |
 | Agents | `agentzones/agent.py` | LLM tool-calling loop. Custom Python agents. `ask_peers`, `call_peer_tool` |
 | Knowledge | `agentzones/knowledge.py` | Verified fixes. `verified_by` is computed only from valid signatures |
-| Federated learning | `agentzones/federated.py` | FedAvg with no coordinator (train, then aggregate peer snapshots), optional DP noise |
+| Federated learning | `agentzones/federated.py` | FedAvg with no coordinator. Outlier rejection, sample-count caps, median and trimmed mean. Survives restarts. Optional DP noise |
 | Proxy Doctor | `proxy_doctor/` | Real diagnostics, simulator, MCP server, student model, LLM investigator, agent |
 | Model check | `scripts/llm_check.py` | Measures tool-calling and diagnosis-JSON reliability of local models |
 | Distillation | `proxy_doctor/distill/` | Teacher labels, then student; SFT data, then LoRA, then GGUF, then Ollama |
@@ -145,3 +173,5 @@ The tests cover:
 - forged attestations, malicious fix steps and key pinning
 - the LLM agent loop and the LLM investigator, against a fake OpenAI endpoint
 - the zone MCP gateway over HTTP and over the stdio bridge
+- model routing, fallback, the `/v1` gateway and escalation of the investigator to a bigger peer model
+- poisoned FL peers (rejected, while naive FedAvg collapses), restart persistence, verified cases teaching the model, the network map API

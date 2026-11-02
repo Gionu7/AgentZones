@@ -21,7 +21,7 @@ def zone_cfg(name, port, seeds, profile, tmp_path):
         "mcp_servers": [{"name": "proxy", "command": sys.executable, "args": ["-m", "proxy_doctor.mcp_server"],
                          "expose": ["list_problems"]}],
         "agents": [{"name": "proxy-doctor", "kind": "python", "impl": "proxy_doctor.agent:ProxyDoctor",
-                    "options": {"explain_with_llm": False}}],
+                    "options": {"explain_with_llm": False, "learn_from_simulated": True}}],
         "federated": {"enabled": True, "data": {"profile": profile, "n_samples": 300}},
     })
 
@@ -77,8 +77,9 @@ async def test_three_zones(tmp_path, serve):
             assert fixes[0]["verified_by"] == ["zone-a", "zone-b"]
 
             # one synchronous FedAvg round -> identical models everywhere
-            for u in (ua, ub, uc):
-                assert (await http.post(u + "/api/fl/train")).status_code == 200
+            trains = [(await http.post(u + "/api/fl/train")).json() for u in (ua, ub, uc)]
+            # learning loop: zone-a and zone-b each verified one case, which entered local training
+            assert [t["new_verified_cases"] for t in trains] == [1, 1, 0]
             aggs = [(await http.post(u + "/api/fl/aggregate")).json() for u in (ua, ub, uc)]
             assert all(len(a["peers"]) == 2 for a in aggs)
             assert len({a["global_acc"] for a in aggs}) == 1

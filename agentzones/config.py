@@ -39,6 +39,16 @@ class ModelConfig(BaseModel):
     timeout_s: float = 120.0
 
 
+class ComputeConfig(BaseModel):
+    """Sharing this zone's model with peers, and using theirs (model routing)."""
+
+    share: bool = False  # serve our local model to peer zones over /p2p/llm/chat
+    max_concurrent: int = 2  # parallel peer requests we accept; more -> 503 busy
+    size_b: float | None = None  # model size in billions of parameters (default: parsed from the model name)
+    gpu: str | None = None  # GPU description; None = auto-detect with nvidia-smi, "" = none
+    accept_from: list[str] = Field(default_factory=list)  # zone names allowed to use our model; empty = all
+
+
 class MCPServerConfig(BaseModel):
     name: str
     # stdio transport: command + args. streamable HTTP transport: url.
@@ -71,6 +81,8 @@ class AgentConfig(BaseModel):
     # Accept questions from peer zones.
     public: bool = True
     max_steps: int = 8
+    # where the agent's LLM calls go: local | largest | any | <zone name>  (see agentzones/compute.py)
+    model_route: str = "local"
     options: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -105,6 +117,11 @@ class FederatedConfig(BaseModel):
     local_epochs: int = 5
     learning_rate: float = 0.5
     dp_noise_std: float = 0.0  # Gaussian noise added to shared weights
+    # robust aggregation against poisoned / broken peers
+    aggregation: Literal["fedavg", "median", "trimmed_mean"] = "fedavg"
+    trim_fraction: float = 0.2  # trimmed_mean: drop this fraction at each end, per coordinate
+    max_sample_ratio: float = 3.0  # fedavg: cap a peer's sample count at this x the median count
+    max_update_ratio: float = 5.0  # drop snapshots whose distance to the median model is > this x the median distance
     auto_rounds: int = 0  # >0: run rounds in the background
     round_interval_s: float = 30.0
 
@@ -118,6 +135,7 @@ class ZoneConfig(BaseModel):
     data_dir: str = "./.zone-data"
     tags: list[str] = Field(default_factory=list)
     model: ModelConfig = Field(default_factory=ModelConfig)
+    compute: ComputeConfig = Field(default_factory=ComputeConfig)
     mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
     agents: list[AgentConfig] = Field(default_factory=list)
     discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)

@@ -22,6 +22,7 @@ from __future__ import annotations
 import hmac
 import json
 import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 from .config import ZoneConfig
+from .llm import LLMUnavailable
 from .security import ip_allowed, verify
 from .zone import Zone
 from .zone_mcp import build_zone_mcp
@@ -82,7 +84,7 @@ def create_app(cfg: ZoneConfig, zone: Zone | None = None) -> FastAPI:
             return await call_next(request)
         if not ip_allowed(ip, sec.allowed_cidrs) and not _is_loopback(ip):
             return JSONResponse({"error": "source address not allowed"}, status_code=403)
-        local_api = path.startswith("/api/") or path == "/mcp"
+        local_api = path.startswith(("/api/", "/v1/")) or path == "/mcp"
         if path == "/mcp" and not _origin_ok(request.headers.get("origin")):
             # MCP over HTTP: refuse browser pages from other origins (DNS-rebinding protection)
             return JSONResponse({"error": "origin not allowed"}, status_code=403)
@@ -104,6 +106,14 @@ def create_app(cfg: ZoneConfig, zone: Zone | None = None) -> FastAPI:
     @app.get("/")
     async def dashboard():
         return FileResponse(STATIC / "index.html")
+
+    @app.get("/map")
+    async def network_map():
+        return FileResponse(STATIC / "map.html")
+
+    @app.get("/api/network")
+    async def network(since: float = 0):
+        return zone.network(since)
 
     @app.get("/health")
     async def health():
@@ -167,6 +177,41 @@ def create_app(cfg: ZoneConfig, zone: Zone | None = None) -> FastAPI:
         except RuntimeError as exc:
             raise HTTPException(400, str(exc))
 
+    # ---------------------------------------------------------------- OpenAI-compatible gateway to the network's models
+    @app.get("/v1/models")
+    async def v1_models():
+        data = [{"id": r, "object": "model", "owned_by": "agentzones"} for r in ("local", "largest", "any")]
+        for m in zone.router.network_models():
+            data.append({"id": f"{m['zone']}/{m['model']}", "object": "model", "owned_by": m["zone"],
+                         "size_b": m.get("size_b"), "gpu": m.get("gpu"), "active": m.get("active"),
+                         "max_concurrent": m.get("max_concurrent")})
+        return {"object": "list", "data": data}
+
+    @app.post("/v1/chat/completions")
+    async def v1_chat(body: dict):
+        if body.get("stream"):
+            return JSONResponse({"error": {"message": "stream=true is not supported"}}, status_code=400)
+        route = str(body.get("model") or "local")
+        if route == zone.cfg.model.model:
+            route = "local"
+        rf = body.get("response_format") or {}
+        try:
+            reply = await zone.router.chat(body.get("messages") or [], body.get("tools"), route=route,
+                                           temperature=body.get("temperature"),
+                                           json_mode=rf.get("type") == "json_object")
+        except LLMUnavailable as exc:
+            return JSONResponse({"error": {"message": str(exc)}}, status_code=503)
+        msg: dict[str, Any] = {"role": "assistant", "content": reply.content}
+        if reply.tool_calls:
+            msg["tool_calls"] = [{"id": c.id, "type": "function",
+                                  "function": {"name": c.name, "arguments": json.dumps(c.arguments)}}
+                                 for c in reply.tool_calls]
+        return {"id": f"az-{uuid.uuid4().hex[:12]}", "object": "chat.completion", "created": int(time.time()),
+                "model": f"{reply.served_by}/{reply.model}",
+                "choices": [{"index": 0, "message": msg,
+                             "finish_reason": "tool_calls" if reply.tool_calls else "stop"}],
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}
+
     # ---------------------------------------------------------------- MCP (zone as an MCP server)
     @app.post("/mcp")
     async def mcp(request: Request):
@@ -204,6 +249,11 @@ def create_app(cfg: ZoneConfig, zone: Zone | None = None) -> FastAPI:
     @app.post("/p2p/fixes")
     async def p2p_fix(request: Request):
         return zone.on_peer_fix(json.loads(await request.body() or b"{}"), caller(request))
+
+    @app.post("/p2p/llm/chat")
+    async def p2p_llm(request: Request):
+        status, res = await zone.compute.serve(json.loads(await request.body() or b"{}"), caller(request))
+        return JSONResponse(res, status_code=status)
 
     @app.get("/p2p/fl/weights")
     async def p2p_weights():

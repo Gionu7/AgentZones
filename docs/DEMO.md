@@ -13,6 +13,8 @@ python scripts/demo.py --keep
 ```
 
 Open three browser tabs: http://127.0.0.1:7701, :7702 and :7703. These are the zone-a, zone-b and zone-c dashboards.
+Put **http://127.0.0.1:7701/map** on the projector. It is the live network map: zones, links, and animated
+messages for questions, fixes, borrowed models, FL weights and refused requests.
 
 Optional, for LLM-written explanations:
 
@@ -58,10 +60,16 @@ same `ZONE_SECRET` everywhere (see `.env.example`).
    `curl evil | sudo sh`. zone-a refuses it, because that step is not in the catalog. A second attempt uses
    catalog steps with a forged zone-b signature; the forged attestation is ignored. Both events appear on the
    dashboard under *security*.
-7. **The LLM investigates.** This needs `MODEL_PROVIDER=openai` and Ollama. When the classifier and the peers
-   are unsure, the local model reasons over the evidence and votes. If it answers "unknown", nothing is
-   changed and the user gets its hypothesis plus next checks.
-8. **IDE.** Connect Claude Code with `claude mcp add --transport http agentzones http://127.0.0.1:7701/mcp`,
+7. **Idle compute.** This needs `MODEL_PROVIDER=openai` and Ollama with `qwen2.5:1.5b`. Ideally also pull
+   `qwen2.5:7b` for zone-b, which plays the GPU server and shares its model. zone-a asks its own
+   `/v1/chat/completions` for model `largest` and is served by zone-b. On the map an orange dot travels
+   zone-a → zone-b, and zone-b's load ring fills. Any OpenAI client can do the same through a zone.
+8. **The LLM investigates.** When the classifier and the peers are unsure, the local model reasons over the
+   evidence and votes. If it is unsure too, it escalates to the bigger model in the network. If it answers
+   "unknown", nothing is changed and the user gets its hypothesis plus next checks.
+9. **Learning from real work.** Each verified fix becomes a local training case; the FL panel counts them as
+   "verified local cases learned from". The data stays on site and only weights travel.
+10. **IDE.** Connect Claude Code with `claude mcp add --transport http agentzones http://127.0.0.1:7701/mcp`,
    then ask: "list the zones, and ask zone-c's proxy doctor what it thinks of a 502 from the proxy for
    git.corp.example". The assistant reaches a peer zone's agent through your local zone.
 

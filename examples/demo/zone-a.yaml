@@ -37,6 +37,7 @@ agents:
       confidence_threshold: 0.75
       investigate_with_llm: true   # local LLM investigates when classifier + peers stay unsure
       investigate_below: 0.5
+      learn_from_simulated: true   # demo: simulated verified cases also feed local training
       auto_apply: true          # simulated machines only; real machines need PROXY_DOCTOR_ALLOW_APPLY=1
       explain_with_llm: true    # falls back to a template if the model is not reachable
   - name: assistant

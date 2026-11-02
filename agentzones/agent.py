@@ -70,13 +70,20 @@ def _short(obj: Any, n: int = 6000) -> str:
 
 
 async def run_tool_loop(zone: "Zone", messages: list[dict[str, Any]], tools: list, max_steps: int = 8,
-                        json_mode: bool = False) -> tuple[str | None, list[dict[str, Any]], str | None]:
-    """Generic LLM tool-calling loop. Returns (final_text, steps, error)."""
+                        json_mode: bool = False, route: str = "local",
+                        served_by: list[str] | None = None) -> tuple[str | None, list[dict[str, Any]], str | None]:
+    """Generic LLM tool-calling loop. Returns (final_text, steps, error).
+
+    route: where the model calls go (see agentzones.compute). Tools always run in this zone.
+    served_by: if given, the zones that served each model call are appended to it."""
     steps: list[dict[str, Any]] = []
     allowed = {t.name for t in tools}
     for _ in range(max_steps):
         try:
-            reply = await zone.llm.chat(messages, [t.openai() for t in tools] or None, json_mode=json_mode and not tools)
+            reply = await zone.router.chat(messages, [t.openai() for t in tools] or None, route=route,
+                                           json_mode=json_mode and not tools)
+            if served_by is not None:
+                served_by.append(reply.served_by)
         except LLMUnavailable as exc:
             return None, steps, str(exc)
         if not reply.tool_calls:
@@ -107,12 +114,15 @@ class LLMAgent(Agent):
         user = question if not context else f"{question}\n\nContext:\n{_short(context, 3000)}"
         messages: list[dict[str, Any]] = [{"role": "system", "content": sys_prompt},
                                           {"role": "user", "content": user}]
-        answer, steps, err = await run_tool_loop(self.zone, messages, self.tools(), self.cfg.max_steps)
+        served: list[str] = []
+        answer, steps, err = await run_tool_loop(self.zone, messages, self.tools(), self.cfg.max_steps,
+                                                 route=self.cfg.model_route, served_by=served)
+        model_zones = sorted(set(served))
         if err == "step limit reached":
-            return {"answer": "Stopped: step limit reached.", "steps": steps}
+            return {"answer": "Stopped: step limit reached.", "steps": steps, "model_zones": model_zones}
         if err:
-            return {"answer": None, "error": err, "steps": steps}
-        return {"answer": answer, "steps": steps}
+            return {"answer": None, "error": err, "steps": steps, "model_zones": model_zones}
+        return {"answer": answer, "steps": steps, "model_zones": model_zones}
 
 
 def build_agent(zone: "Zone", cfg: AgentConfig) -> Agent:

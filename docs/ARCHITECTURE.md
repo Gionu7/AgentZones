@@ -32,6 +32,12 @@
   `agentzone mcp` is a stdio bridge to it.
 * **Federated node:** wraps a *task* (`get_weights`, `set_weights`, `train`, `evaluate`, `n_samples`).
 
+* **Compute share and router** (`agentzones/compute.py`): the card advertises the zone's model, its size
+  (parsed from the name, or `compute.size_b`), its GPU, current load and share settings. `ModelRouter` sends
+  each LLM call to `local`, `largest`, `any` or a named zone, with fallback. A lending zone only runs its
+  *own* model, with no further routing, and never executes tools. The borrowing zone runs its own tools on
+  the returned tool calls.
+
 ## Peer protocol (HTTP + JSON, all requests HMAC-signed)
 
 | Call | Purpose |
@@ -41,6 +47,7 @@
 | `POST /p2p/tools/call` `{tool, arguments}` | Call an exposed tool |
 | `POST /p2p/fixes` (fix) | Push a verified fix |
 | `GET /p2p/fl/weights` | Fetch the last *trained* snapshot `{task, round, n_samples, weights}` |
+| `POST /p2p/llm/chat` `{messages, tools?, json_mode?}` | Borrow the zone's model, if `compute.share` is on. Returns 403 if refused, 503 if busy |
 
 ### Discovery without a registry
 
@@ -68,6 +75,34 @@ If every zone trains before any zone aggregates, all of them end the round with 
 zones run out of step, for example with `federated.auto_rounds`, the process turns into gossip averaging,
 which still converges. You can add `dp_noise_std` to perturb the shared weights. Secure aggregation is on the
 roadmap.
+
+**Robust aggregation** (`robust_aggregate`) protects each round against broken or poisoned peers:
+
+1. Snapshots whose distance to the coordinate-wise median model is more than `max_update_ratio` (5) times
+   the median distance are dropped. A zone never drops its own snapshot.
+2. No peer counts for more than `max_sample_ratio` (3) times the median reported sample count.
+3. The remaining snapshots are combined with `fedavg`, `median` or `trimmed_mean` (`federated.aggregation`).
+
+A peer that sends random weights and claims a million samples is rejected. Without these defences, naive
+FedAvg falls below 50% accuracy (see `tests/test_learning.py`). The model, the snapshot, the round number and
+the history are saved to `data_dir/fl_state.npz` and restored on restart.
+
+**Learning loop.** When Proxy Doctor verifies a fix, it appends the observation and the confirmed class to
+`data_dir/verified_cases.jsonl`. The federated task picks up new lines at every training phase and weights
+each one `verified_weight` (3) times a synthetic case. The file never leaves the zone; only model weights do.
+As real cases accumulate, lower `federated.data.n_samples` so the synthetic bootstrap fades out.
+
+## Network map
+
+`GET /api/network?since=<t>` returns this zone's view of the network:
+
+* **Nodes:** this zone, its live peers with model, GPU, load, served and borrowed counts and agents, zones known
+  only through peers' cards, and *outsiders* that sent refused requests.
+* **Links:** from gossip.
+* **Flows:** cross-zone events since `t`, such as questions, fixes, borrowed models, FL weights, tool calls
+  and refusals.
+
+`/map` renders this as a live SVG with animated messages. The dashboard embeds it.
 
 ## Proxy Doctor flow
 

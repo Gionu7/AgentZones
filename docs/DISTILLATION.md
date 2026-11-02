@@ -127,6 +127,21 @@ evaluation only:
 Each site alone is good at its own problems (85–96% on local hold-out data) and bad at everyone else's.
 Federation fixes that without any site sharing its incident data.
 
+### From synthetic to real: the learning loop
+
+Every fix the doctor verifies appends `{obs, label}` to `data_dir/verified_cases.jsonl`. The next training
+phase includes it, weighted three times a synthetic case (`verified_weight`). The dashboard and
+`agentzone fl status` show `verified_cases`, and `verified_acc` (how well the model fits this site's confirmed
+cases). In `tests/test_learning.py`, half of the real `proxy_auth_required` cases are enough to teach a
+dev-laptop site to recognise the other half, a class it had barely seen before. Lower `n_samples` over time
+so that real incidents replace the synthetic bootstrap.
+
+### Robustness
+
+`federated.aggregation` can be `fedavg` (with sample-count caps), `median` or `trimmed_mean`. Snapshots far
+from the median model are rejected before averaging. A poisoned peer is dropped and accuracy stays at 95%;
+without the defences it falls below 50%.
+
 ## Questions for the mentors
 
 * **Distillation:** soft labels from a teacher LLM, versus teacher-generated *rationales* plus SFT of the small

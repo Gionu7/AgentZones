@@ -30,6 +30,8 @@ class LLMReply:
     content: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
     raw: dict[str, Any] | None = None
+    served_by: str = "local"  # zone that ran the model
+    model: str = ""
 
 
 class LLMUnavailable(RuntimeError):
@@ -88,7 +90,7 @@ class LLM:
                 except json.JSONDecodeError:
                     args = {"_raw": args}
             calls.append(ToolCall(tc.get("id") or f"call_{i}", fn.get("name", ""), args))
-        return LLMReply(content=msg.get("content") or "", tool_calls=calls, raw=data)
+        return LLMReply(content=msg.get("content") or "", tool_calls=calls, raw=data, model=self.cfg.model)
 
     async def close(self) -> None:
         await self.http.aclose()
