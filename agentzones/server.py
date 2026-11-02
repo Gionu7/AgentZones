@@ -27,12 +27,13 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 from .config import ZoneConfig
 from .security import ip_allowed, verify
 from .zone import Zone
+from .zone_mcp import build_zone_mcp
 
 STATIC = Path(__file__).parent / "static"
 
@@ -49,6 +50,13 @@ class ToolCallBody(BaseModel):
 
 def _is_loopback(ip: str | None) -> bool:
     return ip in ("127.0.0.1", "::1", "localhost", "testclient") or (ip or "").startswith("127.")
+
+
+def _origin_ok(origin: str | None) -> bool:
+    if not origin:
+        return True  # non-browser clients (IDEs, CLI) send no Origin
+    host = origin.split("://", 1)[-1].split("/", 1)[0].rsplit(":", 1)[0].strip("[]")
+    return host in ("localhost", "127.0.0.1", "::1")
 
 
 def create_app(cfg: ZoneConfig, zone: Zone | None = None) -> FastAPI:
@@ -74,7 +82,11 @@ def create_app(cfg: ZoneConfig, zone: Zone | None = None) -> FastAPI:
             return await call_next(request)
         if not ip_allowed(ip, sec.allowed_cidrs) and not _is_loopback(ip):
             return JSONResponse({"error": "source address not allowed"}, status_code=403)
-        if path.startswith("/api/") and sec.api_token and not _is_loopback(ip):
+        local_api = path.startswith("/api/") or path == "/mcp"
+        if path == "/mcp" and not _origin_ok(request.headers.get("origin")):
+            # MCP over HTTP: refuse browser pages from other origins (DNS-rebinding protection)
+            return JSONResponse({"error": "origin not allowed"}, status_code=403)
+        if local_api and sec.api_token and not _is_loopback(ip):
             supplied = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
             if not hmac.compare_digest(supplied, sec.api_token):
                 return JSONResponse({"error": "unauthorized: api token required"}, status_code=401)
@@ -154,6 +166,26 @@ def create_app(cfg: ZoneConfig, zone: Zone | None = None) -> FastAPI:
             return await fn()
         except RuntimeError as exc:
             raise HTTPException(400, str(exc))
+
+    # ---------------------------------------------------------------- MCP (zone as an MCP server)
+    @app.post("/mcp")
+    async def mcp(request: Request):
+        if getattr(app.state, "mcp", None) is None:
+            app.state.mcp = build_zone_mcp(zone)  # after start-up: needs the agents
+        try:
+            payload = json.loads(await request.body() or b"null")
+        except json.JSONDecodeError:
+            return JSONResponse({"jsonrpc": "2.0", "id": None,
+                                 "error": {"code": -32700, "message": "parse error"}}, status_code=400)
+        msgs = payload if isinstance(payload, list) else [payload]
+        out = [r for r in [await app.state.mcp.ahandle(m) for m in msgs if isinstance(m, dict)] if r is not None]
+        if not out:
+            return Response(status_code=202)  # notifications only
+        return JSONResponse(out if isinstance(payload, list) else out[0])
+
+    @app.get("/mcp")
+    async def mcp_get():
+        return Response(status_code=405)  # no server-initiated stream
 
     # ---------------------------------------------------------------- peer API
     @app.post("/p2p/announce")

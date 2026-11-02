@@ -8,13 +8,14 @@ import logging
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import __version__
 from .agent import Agent, AskContext, build_agent
 from .config import ZoneConfig
 from .federated import FederatedNode, load_task, task_kwargs
-from .knowledge import FixStore
+from .identity import Identity, KeyPins, verify_sig
+from .knowledge import FixRejected, FixStore
 from .llm import LLM
 from .peers import PeerClient, PeerTable, gossip_once
 from .tools import ToolRegistry
@@ -35,7 +36,13 @@ class Zone:
         self.peer_client = PeerClient(cfg.name, cfg.security.network_secret)
         self.peers = PeerTable(cfg.name, cfg.url, cfg.discovery.peers, cfg.discovery.peer_ttl_s,
                                cfg.discovery.max_peers)
-        self.fixes = FixStore(self.data_dir / "fixes.json")
+        self.identity = Identity.load_or_create(self.data_dir / "zone_key.pem")
+        self.pins = KeyPins(self.data_dir / "known_zones.json",
+                            {**cfg.security.trusted_keys, cfg.name: self.identity.public_b64})
+        self.peers.accept = self._accept_card
+        self.fixes = FixStore(self.data_dir / "fixes.json", self._verify_attestation)
+        # domain validators for fixes received from peers: fn(fix) -> None if OK, else reason
+        self.fix_validators: list[Callable[[dict[str, Any]], str | None]] = []
         self.fl: FederatedNode | None = None
         self.agents: dict[str, Agent] = {}
         self.events: list[dict[str, Any]] = []  # recent activity, for the dashboard
@@ -113,8 +120,23 @@ class Zone:
             "tools": [t.spec() for t in self.tools.exposed()],
             "fl_task": self.fl.task.name if self.fl else None,
             "model": self.cfg.model.model if self.llm.enabled else None,
+            "pubkey": self.identity.public_b64,
             "ts": time.time(),
         }
+
+    # ------------------------------------------------------------------ identity / trust
+    def _accept_card(self, card: dict[str, Any]) -> bool:
+        name, key = card.get("name"), card.get("pubkey")
+        if not self.cfg.security.tofu and name not in self.cfg.security.trusted_keys:
+            return False
+        if self.pins.check(name, key):
+            return True
+        self.event("security", f"refused card for '{name}': public key does not match the pinned key")
+        return False
+
+    def _verify_attestation(self, zone: str, data: bytes, sig: str) -> bool:
+        key = self.pins.key_for(zone)
+        return bool(key) and verify_sig(key, data, sig)
 
     # ------------------------------------------------------------------ gossip
     async def _gossip_loop(self) -> None:
@@ -134,6 +156,8 @@ class Zone:
     def on_announce(self, card: dict[str, Any], remote_ip: str | None) -> dict[str, Any]:
         is_new = self.peers.get(card.get("name", "")) is None
         self.peers.observe(card, via="announce")
+        if self.peers.get(card.get("name", "")) is None:
+            return {"error": "card refused"}
         if is_new and card.get("name") and card.get("name") != self.name:
             self.event("peer", f"peer zone {card.get('name')} announced itself")
         return {"self": self.card(), "peers": self.peers.listing()}
@@ -235,8 +259,8 @@ class Zone:
     async def share_fix(self, fix: dict[str, Any]) -> list[str]:
         async def one(p):
             try:
-                await self.peer_client.request(p.url, "POST", "/p2p/fixes", fix, timeout=10)
-                return p.name
+                r = await self.peer_client.request(p.url, "POST", "/p2p/fixes", fix, timeout=10)
+                return p.name if r and r.get("ok") else None
             except Exception:
                 return None
         sent = [n for n in await asyncio.gather(*(one(p) for p in self.peers.alive())) if n]
@@ -244,12 +268,30 @@ class Zone:
             self.event("fix", f"shared fix '{fix['summary']}' with {', '.join(sent)}")
         return sent
 
+    def add_verified_fix(self, **kw: Any) -> dict[str, Any]:
+        """Store a fix this zone verified itself, with a signed attestation."""
+        return self.fixes.add_verified(zone=self.name, sign=self.identity.sign, **kw)
+
     def on_peer_fix(self, fix: dict[str, Any], caller: str) -> dict[str, Any]:
-        known = fix.get("id") in self.fixes.fixes
-        merged = self.fixes.merge(fix)
-        if not known:
-            self.event("fix", f"received verified fix from {caller}: {merged['summary']}")
-        return {"ok": True, "id": merged["id"]}
+        for check in self.fix_validators:
+            reason = check(fix)
+            if reason:
+                self.event("security", f"rejected fix from {caller}: {reason}")
+                return {"ok": False, "reason": reason}
+        try:
+            merged, n_new, n_bad = self.fixes.merge(fix)
+        except FixRejected as exc:
+            self.event("security", f"rejected fix from {caller}: {exc}")
+            return {"ok": False, "reason": str(exc)}
+        if n_bad:
+            self.event("security", f"ignored {n_bad} invalid attestation(s) in fix from {caller}")
+        if n_new:
+            self.event("fix", f"received fix from {caller}: {merged['summary']} "
+                              f"(verified by {', '.join(merged['verified_by'])})")
+        res = {"ok": True, "id": merged["id"], "verified_by": merged["verified_by"]}
+        if n_bad:
+            res["ignored_attestations"] = n_bad
+        return res
 
     # ------------------------------------------------------------------ federated
     async def fl_train(self) -> dict[str, Any]:

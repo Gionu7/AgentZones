@@ -17,6 +17,17 @@ other zones.
 
 ## Controls built in
 
+* **Signed verifications:**
+  * Each zone has an Ed25519 key. Its public key is pinned on first sight, or pre-shared with
+    `security.trusted_keys` (set `tofu: false` to accept only those).
+  * A zone can only add *its own* name to a fix's `verified_by`, by signing an attestation. A member with the
+    network secret cannot claim that others verified something.
+  * Proxy Doctor only accepts fixes whose steps are catalog templates, so no free-text command from a peer is
+    ever displayed or run.
+* **MCP gateway (`/mcp`):** same access rule as `/api/*`. In addition, requests with a browser `Origin` that
+  is not localhost are refused, which protects against DNS rebinding from a web page.
+* **LLM investigator:** read-only tools only. Its output must be a catalog class or `unknown`, and `unknown`
+  stops the flow without changing anything.
 * **Request signing:** `security.network_secret` is shared by all zones in one network. Every peer request
   carries `X-AZ-Timestamp` and `X-AZ-Signature = HMAC-SHA256(secret, method, path, timestamp, sha256(body))`.
   Requests older than `max_clock_skew_s` (default 120 s) are rejected, which limits replay.
@@ -41,9 +52,10 @@ other zones.
 
 1. **TLS between zones:** put the zone behind an ingress or a reverse proxy with TLS, or use mTLS
    from a service mesh. HMAC protects integrity, not confidentiality.
-2. **Per-zone identity:** replace the shared secret with per-zone key pairs (Ed25519) and a signed list of
-   allowed zones, so one compromised zone cannot impersonate others. The `X-AZ-Zone` header is already there
-   for this.
+2. **Per-zone request signing:** zones already have Ed25519 keys and pins (used for fix attestations). The
+   next step is to sign *requests* with them instead of the shared secret, so a compromised zone cannot
+   impersonate others on the wire either. The `X-AZ-Zone` header is already there for this. Distribute
+   `trusted_keys` from a signed list rather than relying on trust-on-first-use.
 3. **Policy for remote tool calls:** per-peer allow-lists, rate limits and an audit log of `/p2p/tools/call`.
 4. **Prompt-injection hygiene:** treat peer answers as untrusted data. Proxy Doctor only uses peer
    *classifications* and fix *steps* from a known catalog format, and it re-verifies everything. A generic LLM

@@ -113,3 +113,28 @@ def render_fix(problem: str, obs: dict | None = None) -> dict:
         "internal": obs.get("hint_internal_suffix") or ".corp.example",
     }
     return {"problem": problem, "summary": plan["summary"], "steps": [s.format(**vals) for s in plan["steps"]]}
+
+
+def validate_fix(fix: dict) -> str | None:
+    """Gate for fixes received from peers. Only catalog fixes travel between zones:
+    the problem must be known, the summary must be the catalog summary, and every
+    step must be one of the catalog *templates* for that problem (unrendered), in
+    catalog order. Each zone renders the templates with its own observation, so
+    no free text from a peer is ever shown to a user or executed."""
+    problem = fix.get("problem")
+    plan = FIXES.get(problem)
+    if not plan:
+        return f"unknown problem {problem!r}"
+    if fix.get("summary") != plan["summary"]:
+        return "summary does not match the catalog"
+    steps = fix.get("steps")
+    if not isinstance(steps, list) or not steps:
+        return "no steps"
+    allowed = plan["steps"]
+    idx = 0
+    for s in steps:
+        try:
+            idx = allowed.index(s, idx) + 1
+        except ValueError:
+            return f"step not in catalog for {problem}: {str(s)[:80]!r}"
+    return None

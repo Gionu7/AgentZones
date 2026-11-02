@@ -18,6 +18,8 @@ discovery:
   peer_ttl_s: 20
 
 security:
+  # Ed25519 keys (auto-created) sign fix verifications; pin known zones here, else trust-on-first-use
+  # trusted_keys: {zone-b: <base64 pubkey from zone-b's /api/info>}
   network_secret: ${ZONE_SECRET:-hackathon-demo-secret}
 
 mcp_servers:
@@ -33,6 +35,8 @@ agents:
     description: Diagnoses and fixes corporate proxy and certificate problems
     options:
       confidence_threshold: 0.75
+      investigate_with_llm: true   # local LLM investigates when classifier + peers stay unsure
+      investigate_below: 0.5
       auto_apply: true          # simulated machines only; real machines need PROXY_DOCTOR_ALLOW_APPLY=1
       explain_with_llm: true    # falls back to a template if the model is not reachable
   - name: assistant

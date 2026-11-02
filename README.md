@@ -7,7 +7,11 @@ with **no central registry**. Agents can ask agents in other zones and use the t
 Zones can also **train a shared model with federated learning** without exchanging raw data.
 
 The demo agent is **Proxy Doctor**. It diagnoses and fixes corporate proxy and certificate problems on
-the machine it runs on. When it is unsure it asks peer zones for help. It verifies a fix before sharing it.
+the machine it runs on. When it is unsure it asks peer zones for help, and if they are unsure too, the local
+LLM investigates. It verifies a fix before sharing it, and signs it so other zones know who verified it.
+
+Every zone is also an **MCP server**, so an IDE assistant (Claude Code, Claude Desktop, VS Code) can plug into
+the whole zone network.
 
 ```
      site A (dev laptops)            site B (build VMs)            site C (Kubernetes)
@@ -75,6 +79,27 @@ federated: {enabled: true, task: proxy_doctor.student:ProxyStudentTask}
 
 `agentzone init` writes a commented starter file. Any value can be written as `${ENV_VAR:-default}`.
 
+## Use the zone network from your IDE (MCP)
+
+Every zone serves MCP at `http://<zone>:7700/mcp`. Its tools are `list_zones`, `ask_agent` (this zone or any
+peer), `ask_all_zones`, `list_tools`, `call_tool` (local tools, or the tools a peer exposes), `search_fixes`
+and `diagnose_proxy`.
+
+Claude Code or VS Code (HTTP):
+
+```bash
+claude mcp add --transport http agentzones http://127.0.0.1:7700/mcp
+```
+
+Claude Desktop (stdio bridge), in `claude_desktop_config.json`:
+
+```json
+{"mcpServers": {"agentzones": {"command": "agentzone", "args": ["--zone", "http://127.0.0.1:7700", "mcp"]}}}
+```
+
+The assistant acts as the local user. The same rules apply as for `/api/*`: it must connect from loopback or
+send the `api_token`. Browser pages from other origins are refused.
+
 ## CLI
 
 ```
@@ -83,6 +108,7 @@ agentzone info | peers | tools | fixes     inspect the zone   (--zone URL for an
 agentzone ask proxy-doctor "pip fails with CERTIFICATE_VERIFY_FAILED" [--simulate tool_ca_bundle]
 agentzone call proxy.diagnose '{"target": "https://pypi.org"}'
 agentzone fl status | train | aggregate | round
+agentzone mcp                              stdio MCP server for IDE assistants
 ```
 
 ## What is in the box
@@ -92,11 +118,14 @@ agentzone fl status | train | aggregate | round
 | Zone runtime | `agentzones/zone.py`, `server.py` | FastAPI app: local API, dashboard, peer API under `/p2p/*` |
 | Discovery | `agentzones/peers.py` | Gossip from seed peers, peer cards, TTL expiry, no registry |
 | Security | `agentzones/security.py` | HMAC-SHA256 request signing, replay window, CIDR allow-list, API token |
+| Identity | `agentzones/identity.py` | Ed25519 key per zone, key pinning, signed attestations of verified fixes |
+| MCP gateway | `agentzones/zone_mcp.py` | The zone as an MCP server (`/mcp` and `agentzone mcp`) for IDE assistants |
 | MCP | `agentzones/mcp_lite.py` | Dependency-free MCP client (stdio and streamable HTTP) and server |
 | Agents | `agentzones/agent.py` | LLM tool-calling loop. Custom Python agents. `ask_peers`, `call_peer_tool` |
-| Knowledge | `agentzones/knowledge.py` | Store of verified fixes, merged across zones |
+| Knowledge | `agentzones/knowledge.py` | Verified fixes. `verified_by` is computed only from valid signatures |
 | Federated learning | `agentzones/federated.py` | FedAvg with no coordinator (train, then aggregate peer snapshots), optional DP noise |
-| Proxy Doctor | `proxy_doctor/` | Real diagnostics, simulator, MCP server, student model, agent |
+| Proxy Doctor | `proxy_doctor/` | Real diagnostics, simulator, MCP server, student model, LLM investigator, agent |
+| Model check | `scripts/llm_check.py` | Measures tool-calling and diagnosis-JSON reliability of local models |
 | Distillation | `proxy_doctor/distill/` | Teacher labels, then student; SFT data, then LoRA, then GGUF, then Ollama |
 | Deploy | `docker-compose.yml`, `deploy/` | Docker, GPU override, 3-zone demo, Kubernetes, Azure VM, Azure ML job |
 
@@ -109,6 +138,10 @@ Docs: [architecture and protocol](docs/ARCHITECTURE.md), [security and allowed t
 pytest -q
 ```
 
-The tests cover signing, gossip, the MCP stdio round-trip, FedAvg, and three live zones over HTTP. Those include
-signed and unsigned calls, exposed and hidden tools, fix sharing and a federated round. They also run an LLM
-agent loop against a fake OpenAI endpoint.
+The tests cover:
+
+- request signing, gossip, the MCP stdio round-trip and FedAvg
+- three live zones over HTTP: signed and unsigned calls, exposed and hidden tools, fix sharing and a federated round
+- forged attestations, malicious fix steps and key pinning
+- the LLM agent loop and the LLM investigator, against a fake OpenAI endpoint
+- the zone MCP gateway over HTTP and over the stdio bridge

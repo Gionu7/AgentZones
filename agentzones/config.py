@@ -84,6 +84,11 @@ class SecurityConfig(BaseModel):
     # Bearer token for the local /api/* (users, CLI, dashboard) from non-loopback
     # addresses. Empty = open (fine on a laptop, not on a shared network).
     api_token: str = ""
+    # Pre-shared Ed25519 public keys of zones (name -> base64). These always win.
+    trusted_keys: dict[str, str] = Field(default_factory=dict)
+    # Trust-on-first-use: pin the first key seen for unknown zone names.
+    # false = only zones listed in trusted_keys are accepted as peers.
+    tofu: bool = True
 
 
 class DiscoveryConfig(BaseModel):

@@ -6,6 +6,7 @@
   agentzone ask AGENT "question"       ask an agent (in this or, via --zone, another zone)
   agentzone call TOOL '{"arg": 1}'     call a tool directly
   agentzone fl status|train|aggregate|round
+  agentzone mcp                        stdio MCP server for IDE assistants (bridges to the zone's /mcp)
 """
 
 from __future__ import annotations
@@ -136,6 +137,32 @@ def cmd_fl(args) -> None:
     _print(_get(args, "/api/fl") if args.phase == "status" else _post(args, f"/api/fl/{args.phase}"))
 
 
+def cmd_mcp(args) -> None:
+    """stdio MCP server that forwards JSON-RPC to the zone's /mcp endpoint (for Claude Desktop etc.)."""
+    url = _base(args) + "/mcp"
+    with httpx.Client(timeout=600, headers=_headers()) as http:
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            try:
+                r = http.post(url, content=line, headers={"Content-Type": "application/json"})
+                if r.status_code == 202 or not r.content:
+                    continue
+                reply = r.json()
+            except Exception as exc:
+                if not isinstance(msg, dict) or msg.get("id") is None:
+                    continue
+                reply = {"jsonrpc": "2.0", "id": msg.get("id"),
+                         "error": {"code": -32603, "message": f"zone at {url} unreachable: {exc}"}}
+            sys.stdout.write(json.dumps(reply) + "\n")
+            sys.stdout.flush()
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="agentzone", description="Peer-to-peer self-hosted AI agent zones")
     ap.add_argument("--zone", help="zone URL for client commands (default $AGENTZONE_URL or http://127.0.0.1:7700)")
@@ -176,6 +203,9 @@ def main(argv: list[str] | None = None) -> None:
     fl = sub.add_parser("fl", help="federated learning")
     fl.add_argument("phase", choices=["status", "train", "aggregate", "round"])
     fl.set_defaults(fn=cmd_fl)
+
+    mcp = sub.add_parser("mcp", help="stdio MCP server bridging to the zone (for Claude Desktop, IDEs)")
+    mcp.set_defaults(fn=cmd_mcp)
 
     args = ap.parse_args(argv)
     try:

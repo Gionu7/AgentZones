@@ -21,8 +21,15 @@
     `zone.list_peers` and `zone.call_peer_tool`.
   * `kind: python` is any class `module:Class` that subclasses `agentzones.agent.Agent`.
     `ProxyDoctor` is one.
-* **Fix store:** verified fixes as JSON in `data_dir`. Fixes received from peers are kept together with the
-  list of zones that verified them. Peers' fixes are never auto-applied without re-verification.
+* **Identity:** each zone has an Ed25519 key (`data_dir/zone_key.pem`) and publishes the public key in its card.
+  Peers pin the first key they see for a zone name, or use pre-shared `security.trusted_keys`. A card with a
+  different key for a pinned name is refused.
+* **Fix store:** verified fixes as JSON in `data_dir`. Each fix carries *attestations*: Ed25519 signatures by
+  the zones that applied it and saw their checks pass. `verified_by` is recomputed from the attestations that
+  verify against pinned keys. Whatever the sender claims is ignored, and a fix with no valid attestation is
+  refused. Agents can add domain validators (`zone.fix_validators`). Peers' fixes are never auto-applied.
+* **MCP gateway:** `POST /mcp` turns the zone into an MCP server for IDE assistants (`agentzones/zone_mcp.py`).
+  `agentzone mcp` is a stdio bridge to it.
 * **Federated node:** wraps a *task* (`get_weights`, `set_weights`, `train`, `evaluate`, `n_samples`).
 
 ## Peer protocol (HTTP + JSON, all requests HMAC-signed)
@@ -65,10 +72,14 @@ roadmap.
 ## Proxy Doctor flow
 
 ```
-diagnose (MCP) -> student.classify -> confident and a verified fix known? --yes--> apply -> re-diagnose -> verified? -> store + share
-                                         | no
-                                         v
-                       ask_peers(observation only) -> vote (unsure) / collect fixes (confident)
+diagnose (MCP) -> student.classify -> confident and a verified fix known? --yes--> apply -> re-diagnose -> verified? -> sign, store, share
+                                         | no                                         ^
+                                         v                                            |
+                       ask_peers(observation only) -> vote (unsure) / collect fixes   |
+                                         | still < investigate_below (0.5)            |
+                                         v                                            |
+                       local LLM investigates -> votes with a catalog class ----------+
+                                              -> "unknown": stop, show hypothesis + next checks, change nothing
 ```
 
 * The **observation** holds only diagnostics: env flags with redacted proxy credentials, HTTP status codes and
@@ -76,7 +87,20 @@ diagnose (MCP) -> student.classify -> confident and a verified fix known? --yes-
 * The **student** is a softmax classifier over 27 structured features plus 256 hashed error-text features,
   about 2.5k parameters in total. It is distilled from a teacher and improved with FL. The local LLM writes the
   explanation, but the decision does not depend on it.
+* **LLM investigation** runs when the combined confidence stays below `investigate_below`, or when
+  `context.investigate` is set. The local model gets the observation and the opinions so far. On a real
+  machine it can also run read-only checks: `check_proxy_env`, `check_https`, `inspect_tls` and `dns_lookup`.
+  It must answer with JSON naming a catalog class, or `unknown`.
+  * A catalog class is one more vote.
+  * `unknown`, or any answer outside the catalog, stops the flow. Nothing is applied, and the user gets the
+    model's reasoning and the next checks to run.
+
+  The LLM can therefore *decide* but never *act* outside the catalog.
 * **Verification** means the doctor re-runs the checks after applying the fix and the external (and internal)
-  request now succeeds. Only verified fixes are shared.
+  request now succeeds. Only verified fixes are signed and shared.
+* **Fixes travel as catalog templates** (`{proxy}`, `{ca_path}` unrendered). Each zone renders them with its
+  own observation. `catalog.validate_fix` refuses any step that is not a catalog template for that problem.
+  So no free text from a peer is ever shown to a user or executed, and the same fix has the same ID on every
+  zone, which lets attestations from different zones accumulate.
 * **Peers answering:** a peer classifies *your* observation with *its* model and returns *its* verified fixes.
   It never runs diagnostics on its own machine for your problem.

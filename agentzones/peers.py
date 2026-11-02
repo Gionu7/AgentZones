@@ -15,7 +15,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -66,6 +66,8 @@ class PeerTable:
         self.seeds = [u.strip().rstrip("/") for s in seeds for u in (s or "").split(",") if u.strip()]
         self.ttl_s, self.max_peers = ttl_s, max_peers
         self.by_url: dict[str, Peer] = {}
+        # hook: return False to refuse a card (e.g. public-key pin mismatch)
+        self.accept: Callable[[dict[str, Any]], bool] = lambda card: True
         for s in self.seeds:
             self.add_candidate(s, via="seed")
 
@@ -85,6 +87,8 @@ class PeerTable:
         url = (card.get("url") or "").rstrip("/")
         name = card.get("name")
         if not url or self._is_self(url, name):
+            return
+        if not self.accept(card):
             return
         # a zone may change URL (e.g. pod restart); collapse duplicates by name
         for other_url, p in list(self.by_url.items()):

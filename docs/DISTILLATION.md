@@ -95,6 +95,20 @@ ollama create proxy-doctor -f proxy_doctor/distill/Modelfile
 
 Finally, set `model.model: proxy-doctor` in `zone.yaml`.
 
+## 3b. Pick the smallest reliable local model
+
+```bash
+python scripts/llm_check.py --url http://localhost:11434/v1 --model qwen2.5:1.5b qwen2.5:3b qwen2.5:7b
+```
+
+The script reports two success rates for each model, plus latency:
+
+* **Tool calls:** whether the model called the right tool with the right argument.
+* **Diagnosis JSON:** whether, acting as the investigator, it returned valid JSON naming the right class.
+
+Use the smallest model that reaches at least 90% on tool calls and 80% on diagnosis JSON. Run it again after
+the LoRA fine-tune to show the gain from distillation.
+
 ## 4. Federated learning across zones
 
 Each zone trains the student on its *local* cases. Today these are synthetic, generated with the site's profile.

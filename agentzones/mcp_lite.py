@@ -259,8 +259,17 @@ class MiniMCPServer:
             return fn
         return deco
 
-    # exposed for in-process use / tests
+    @staticmethod
+    def _wrap(out: Any) -> dict[str, Any]:
+        text = out if isinstance(out, str) else json.dumps(out, indent=2, default=str)
+        return {"content": [{"type": "text", "text": text}], "isError": False}
+
+    @staticmethod
+    def _err(exc: Exception) -> dict[str, Any]:
+        return {"content": [{"type": "text", "text": f"{type(exc).__name__}: {exc}"}], "isError": True}
+
     def call(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Synchronous call (stdio servers with sync tools)."""
         if name not in self._tools:
             return {"content": [{"type": "text", "text": f"unknown tool {name}"}], "isError": True}
         fn, _ = self._tools[name]
@@ -268,39 +277,74 @@ class MiniMCPServer:
             out = fn(**(arguments or {}))
             if inspect.isawaitable(out):
                 out = asyncio.run(out)
-            text = out if isinstance(out, str) else json.dumps(out, indent=2, default=str)
-            return {"content": [{"type": "text", "text": text}], "isError": False}
+            return self._wrap(out)
         except Exception as exc:  # report tool errors to the model, don't crash
-            return {"content": [{"type": "text", "text": f"{type(exc).__name__}: {exc}"}], "isError": True}
+            return self._err(exc)
 
-    def handle(self, msg: dict[str, Any]) -> dict[str, Any] | None:
+    async def acall(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Async call (servers embedded in an event loop, e.g. the zone's /mcp endpoint)."""
+        if name not in self._tools:
+            return {"content": [{"type": "text", "text": f"unknown tool {name}"}], "isError": True}
+        fn, _ = self._tools[name]
+        try:
+            out = fn(**(arguments or {}))
+            if inspect.isawaitable(out):
+                out = await out
+            return self._wrap(out)
+        except Exception as exc:
+            return self._err(exc)
+
+    def _dispatch(self, msg: dict[str, Any]) -> tuple[str, Any]:
+        """Returns ("result", value) | ("call", (name, args)) | ("error", (code, message)) | ("none", None)."""
         method, rid = msg.get("method"), msg.get("id")
         if rid is None:
-            return None  # notification
+            return "none", None  # notification
+        if method == "initialize":
+            return "result", {
+                "protocolVersion": (msg.get("params") or {}).get("protocolVersion", PROTOCOL_VERSION),
+                "capabilities": {"tools": {"listChanged": False}},
+                "serverInfo": {"name": self.name, "version": self.version},
+                **({"instructions": self.instructions} if self.instructions else {}),
+            }
+        if method == "ping":
+            return "result", {}
+        if method == "tools/list":
+            return "result", {"tools": [
+                {"name": t.name, "description": t.description, "inputSchema": t.input_schema}
+                for _, t in self._tools.values()]}
+        if method == "tools/call":
+            p = msg.get("params") or {}
+            return "call", (p.get("name", ""), p.get("arguments") or {})
+        return "error", (-32601, f"method not found: {method}")
+
+    def _respond(self, rid: Any, kind: str, value: Any) -> dict[str, Any]:
+        if kind == "error":
+            return {"jsonrpc": "2.0", "id": rid, "error": {"code": value[0], "message": value[1]}}
+        return {"jsonrpc": "2.0", "id": rid, "result": value}
+
+    def handle(self, msg: dict[str, Any]) -> dict[str, Any] | None:
         try:
-            if method == "initialize":
-                result = {
-                    "protocolVersion": msg.get("params", {}).get("protocolVersion", PROTOCOL_VERSION),
-                    "capabilities": {"tools": {"listChanged": False}},
-                    "serverInfo": {"name": self.name, "version": self.version},
-                    **({"instructions": self.instructions} if self.instructions else {}),
-                }
-            elif method == "ping":
-                result = {}
-            elif method == "tools/list":
-                result = {"tools": [
-                    {"name": t.name, "description": t.description, "inputSchema": t.input_schema}
-                    for _, t in self._tools.values()
-                ]}
-            elif method == "tools/call":
-                p = msg.get("params", {})
-                result = self.call(p.get("name", ""), p.get("arguments") or {})
-            else:
-                return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": f"method not found: {method}"}}
-            return {"jsonrpc": "2.0", "id": rid, "result": result}
+            kind, value = self._dispatch(msg)
+            if kind == "none":
+                return None
+            if kind == "call":
+                kind, value = "result", self.call(*value)
+            return self._respond(msg.get("id"), kind, value)
         except Exception as exc:
             traceback.print_exc(file=sys.stderr)
-            return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32603, "message": str(exc)}}
+            return self._respond(msg.get("id"), "error", (-32603, str(exc)))
+
+    async def ahandle(self, msg: dict[str, Any]) -> dict[str, Any] | None:
+        try:
+            kind, value = self._dispatch(msg)
+            if kind == "none":
+                return None
+            if kind == "call":
+                kind, value = "result", await self.acall(*value)
+            return self._respond(msg.get("id"), kind, value)
+        except Exception as exc:
+            traceback.print_exc(file=sys.stderr)
+            return self._respond(msg.get("id"), "error", (-32603, str(exc)))
 
     def run(self) -> None:
         # keep stdout clean for protocol traffic

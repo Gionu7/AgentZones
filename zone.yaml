@@ -18,6 +18,8 @@ discovery:
   peer_ttl_s: 60
 
 security:
+  # Ed25519 keys (auto-created) sign fix verifications; pin known zones here, else trust-on-first-use
+  # trusted_keys: {zone-b: <base64 pubkey from zone-b's /api/info>}
   network_secret: ${ZONE_SECRET:-}     # same value on every zone of the network
   api_token: ${ZONE_API_TOKEN:-}       # protects /api/* from non-local callers
   allowed_cidrs: []                    # e.g. ["10.0.0.0/8"]
@@ -35,6 +37,8 @@ agents:
     description: Diagnoses and fixes corporate proxy and certificate problems
     options:
       confidence_threshold: 0.75
+      investigate_with_llm: true   # local LLM investigates when classifier + peers stay unsure
+      investigate_below: 0.5
       auto_apply: false                # real machine: propose fixes, don't apply
   - name: assistant
     kind: llm

@@ -2,11 +2,13 @@ from agentzones.knowledge import FixStore
 
 
 def test_add_merge_search_persist(tmp_path):
-    s = FixStore(tmp_path / "f.json")
-    f = s.add(problem="tool_ca_bundle", summary="point pip at system CA", steps=["pip config set global.cert x"],
-              verified_by=["a"], origin="a", symptoms="CERTIFICATE_VERIFY_FAILED pip")
-    s.merge({**f, "verified_by": ["b"]})
-    assert s.fixes[f["id"]]["verified_by"] == ["a", "b"]
+    s = FixStore(tmp_path / "f.json")  # no verifier: accepts any well-formed attestation
+    f = s.add_verified(problem="tool_ca_bundle", summary="point pip at system CA",
+                       steps=["pip config set global.cert x"], zone="a", sign=lambda d: "sig",
+                       symptoms="CERTIFICATE_VERIFY_FAILED pip")
+    other = {**f, "attestations": [{"zone": "b", "ts": 1.0, "sig": "x"}]}
+    _, n, _ = s.merge(other)
+    assert n == 1 and s.fixes[f["id"]]["verified_by"] == ["a", "b"]
     assert s.search("tool_ca_bundle")[0]["id"] == f["id"]
     assert s.search("clock_skew") == []
     assert s.search(text="pip certificate")[0]["id"] == f["id"]
