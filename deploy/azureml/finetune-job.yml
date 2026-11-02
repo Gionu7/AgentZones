@@ -1,0 +1,19 @@
+# Azure ML command job: LoRA fine-tune the small proxy-doctor model on a GPU cluster.
+#   az ml job create -f deploy/azureml/finetune-job.yml -g <rg> -w <workspace>
+# Upload data/sft.jsonl first (or point `inputs.sft` at a registered data asset).
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+display_name: proxy-doctor-lora
+experiment_name: agentzones-distill
+code: ../..
+command: >-
+  pip install -e '.[distill]' &&
+  python -m proxy_doctor.distill.finetune_lora --data ${{inputs.sft}} --base ${{inputs.base}}
+  --out ${{outputs.model}}
+inputs:
+  sft: {type: uri_file, path: ../../data/sft.jsonl}
+  base: Qwen/Qwen2.5-1.5B-Instruct
+outputs:
+  model: {type: uri_folder}
+environment: azureml://registries/azureml/environments/acpt-pytorch-2.2-cuda12.1/labels/latest
+compute: azureml:gpu-cluster   # e.g. Standard_NC4as_T4_v3 / NC24ads_A100_v4
+resources: {instance_count: 1}

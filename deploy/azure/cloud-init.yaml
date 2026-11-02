@@ -1,0 +1,8 @@
+#cloud-config
+# Ubuntu 22.04/24.04: Docker + compose plugin. deploy-vm.sh copies the repo and starts the zone.
+package_update: true
+packages: [ca-certificates, curl, rsync]
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - usermod -aG docker azureuser
+  - mkdir -p /opt/agentzones && chown azureuser /opt/agentzones

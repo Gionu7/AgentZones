@@ -1,0 +1,7 @@
+.git
+.zone-data
+.zone-*.log
+**/__pycache__
+.pytest_cache
+data
+*.gguf
