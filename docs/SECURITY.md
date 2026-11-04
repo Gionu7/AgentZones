@@ -50,18 +50,31 @@ So, best first:
 
 ## Controls in the agents
 
-* **Proxy Doctor:** other zones can only consult it (with *their* observation) and push fixes; only its own
-  zone can make it diagnose and change the machine. Pushed fixes are recorded as verified by the sending zone
+* **Proxy Doctor:** other zones can consult it (with *their* observation), ask it questions (answered from the
+  question's text only) and push fixes; only its own zone can make it diagnose and change the machine. Pushed fixes are recorded as verified by the sending zone
   only, are never applied without local verification, and are size-limited. Real changes need
   `PROXY_DOCTOR_ALLOW_APPLY=1` and are user-level only (an env file, `pip config`, `git config`); system CA
   installs and clock fixes are returned as steps for a person.
 * **Data minimisation:** only diagnostic observations leave a zone, with proxy credentials redacted. Federated
   learning moves model parameters, never data.
-* **FL aggregator:** rejects client parameters with the wrong names, shapes or NaN/inf values.
-  `FL_CONTROL_ZONES` limits who may start and stop runs.
-* **LLM agent:** refuses messages from other zones unless `LLM_ACCEPT_REMOTE=1`, since they would drive this
-  zone's tools; agent-to-agent chains stop after two hops.
+* **FL aggregator:** rejects client parameters with the wrong names, shapes or NaN/inf values, caps claimed
+  sample counts (`FL_MAX_SAMPLES`) and drops updates far larger than the median (`FL_MAX_UPDATE_RATIO`).
+  Only operators (`FL_OPERATORS`) start and stop runs; everyone else, including LLM agents through the MCP
+  tools, sends a request that an operator approves. Rounds per start are capped (`FL_MAX_ROUNDS`), there is
+  an optional cooldown, `FL_CONTROL_ZONES` limits which zones may control a job, and every decision is in the
+  audit log. Sender names are self-reported inside a zone: the trust boundary is the zone's local API.
+* **LLM agents:** answer other zones with the model only. Tools are off for them unless the owner lists some
+  in `LLM_REMOTE_TOOLS` (the tools are not offered to the model, and calls to others are refused);
+  `LLM_ACCEPT_REMOTE=0` refuses other zones altogether. Agent-to-agent chains stop after two hops.
+* **Code assistant:** its MCP server is read-only and confined to one folder: no writes, no commands, no
+  symlinks out of the folder, and secret-looking files (`.env`, keys, certificates, credentials) are neither
+  listed nor read. Other zones only get the code tools with `CODE_REMOTE_TOOLS=code.*` (Docker) or
+  `--share-code` (laptop). Answers still leave the zone, so think before exposing private code to it.
 * **Containers:** run as uid 10001; the local API and MCP ports are bound to `127.0.0.1`.
+* **Dashboard:** lives on the local API, so it is as private as that API. The page itself is static; its
+  data (`/dashboard/data`) and its Start / Stop buttons (`/send`) need `ZONE_API_TOKEN` when one is set. The
+  hub records message metadata only (type, size, sender, receiver), never payloads. Everything that comes
+  from other zones (agent names, descriptions, events) is escaped before it is shown.
 
 ## Known limits (next steps)
 
@@ -69,8 +82,8 @@ So, best first:
    Next step: back the mailboxes with Redis or SQLite.
 2. **End-to-end encryption:** the hub can read everything it routes. If the hub host is not trusted, encrypt
    payloads between zones (for example with per-zone X25519 keys published in the directory).
-3. **Poisoning:** a zone can still send bad but well-formed weights or wrong fixes. Robust aggregation
-   (median or trimmed mean) and per-zone reputation are not implemented yet.
+3. **Poisoning:** the size check and sample cap stop crude attacks, but a zone can still send subtly bad
+   weights or wrong fixes. A robust average (median or trimmed mean) and per-zone reputation are next steps.
 4. **Secure aggregation:** the aggregator sees each client's update. Masking-based secure aggregation would
    hide individual updates.
 5. **Prompt injection:** treat other zones' replies as untrusted data. Proxy Doctor only uses classifications

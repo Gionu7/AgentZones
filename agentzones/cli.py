@@ -4,14 +4,17 @@ Run the parts of a zone (each reads its settings from the environment)::
 
   agentzone gateway                 ROLE=hub|spoke|standalone, ZONE, HUB_URL, HUB_TOKEN, SPOKE_TOKENS, ...
   agentzone agent                   AGENT_NAME, AGENT_IMPL, GATEWAY_URL, ...
-  agentzone mcp [--stdio]           MCP server with list_agents / send_message
+  agentzone mcp [--stdio]           MCP server with list_agents / send_message / fl_*
+  agentzone laptop [--hub URL --token T]   a whole zone on this laptop, one process, no Docker
+  agentzone model setup             get MODEL_NAME into Ollama from MODEL_SOURCE (library, hf.co, URL, file)
 
 Talk to a zone (through its gateway, default http://127.0.0.1:8080 or $GATEWAY_URL)::
 
   agentzone status | directory [-c CAPABILITY]
   agentzone send ZONE AGENT '{"type": "fl.status"}'
   agentzone ask proxy-doctor "pip fails with 407" [--simulate proxy_auth_required]
-  agentzone fl status|start|stop [--zone b --agent mnist-aggregator]
+  agentzone fl status|start|stop [--job mnist] [--rounds 5] [--reason "..."]
+  agentzone fl approve|reject --id ID [--job mnist]        decide on a pending fl.request
   agentzone token                   print a random token for SPOKE_TOKENS / HUB_TOKEN
 """
 
@@ -68,6 +71,28 @@ def main(argv: list[str] | None = None) -> int:
     m.add_argument("--host", default=os.environ.get("MCP_HOST", "0.0.0.0"))
     m.add_argument("--port", type=int, default=int(os.environ.get("MCP_PORT", "8000")))
 
+    lp = sub.add_parser("laptop", help="run a zone on this machine (no Docker)")
+    lp.add_argument("--zone", default="", help="zone name (default: laptop-<user>)")
+    lp.add_argument("--hub", default="", help="hub URL, e.g. http://az-host:9090 (none: standalone)")
+    lp.add_argument("--token", default="", help="this laptop's spoke token (HUB_TOKEN)")
+    lp.add_argument("--proxy", default="", help="HTTP proxy for the hub (HUB_PROXY)")
+    lp.add_argument("--model", default="", help="model name (MODEL_NAME, default llama3.2:3b)")
+    lp.add_argument("--model-source", default="", help="hf.co/..., https://...gguf or a .gguf file (MODEL_SOURCE)")
+    lp.add_argument("--model-url", default="", help="OpenAI-compatible server (default http://127.0.0.1:11434/v1)")
+    lp.add_argument("--no-llm", action="store_true", help="no LLM: Proxy Doctor still works")
+    lp.add_argument("--fl", action="store_true", help="join federated training of Proxy Doctor's classifier")
+    lp.add_argument("--code", default="", help="folder for a code-assistant agent (read-only)")
+    lp.add_argument("--share-code", action="store_true", help="let other zones' questions read that code")
+    lp.add_argument("--port", type=int, default=8080)
+    lp.add_argument("--mcp-port", type=int, default=8000, help="0: no MCP server")
+    lp.add_argument("--data", default="~/.agentzones")
+    md = sub.add_parser("model", help="set up a local model")
+    md.add_argument("action", choices=["setup"])
+    md.add_argument("--name", default="", help="MODEL_NAME")
+    md.add_argument("--source", default="", help="MODEL_SOURCE (default: the name)")
+    md.add_argument("--url", default="", help="MODEL_URL of the server")
+    md.add_argument("--force", action="store_true")
+
     sub.add_parser("status")
     d = sub.add_parser("directory")
     d.add_argument("-c", "--capability")
@@ -82,7 +107,9 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--simulate", help="Proxy Doctor: simulate a scenario instead of checking this machine")
     a.add_argument("--target")
     f = sub.add_parser("fl")
-    f.add_argument("action", choices=["status", "start", "stop"])
+    f.add_argument("action", choices=["status", "start", "stop", "approve", "reject"])
+    f.add_argument("--id", help="pending request id (approve / reject)")
+    f.add_argument("--reason", default="")
     f.add_argument("--zone", default="")
     f.add_argument("--agent", default="")
     f.add_argument("--job", default="", help="find the aggregator of this job in the directory")
@@ -101,6 +128,23 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "agent":
         from .agent import AgentHost
         asyncio.run(AgentHost().serve())
+        return 0
+    if args.cmd == "laptop":
+        from .laptop import main as laptop_main
+        laptop_main(args)
+        return 0
+    if args.cmd == "model":
+        from .models import setup_from_env
+        env = dict(os.environ)
+        env.update({k: v for k, v in (("MODEL_NAME", args.name), ("MODEL_SOURCE", args.source),
+                                      ("MODEL_URL", args.url)) if v})
+        env.setdefault("MODEL_URL", "http://127.0.0.1:11434/v1")  # run natively: the local Ollama
+        env.setdefault("MODEL_CACHE", os.path.expanduser("~/.agentzones/models"))
+        try:
+            print(setup_from_env(env, force=args.force))
+        except Exception as exc:
+            print(f"model setup failed: {exc}", file=sys.stderr)
+            return 1
         return 0
     if args.cmd == "mcp":
         from .mcp_gateway import http_app, main_from_env
@@ -134,7 +178,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"no aggregator with capability {cap} in the directory", file=sys.stderr)
                 return 1
             zone, agent = found[0]["zone"], found[0]["agent"]
-        payload = {"type": f"fl.{args.action}", **({"rounds": args.rounds} if args.rounds else {})}
+        payload = {"type": f"fl.{args.action}", **({"rounds": args.rounds} if args.rounds else {}),
+                   **({"id": args.id} if args.id else {}), **({"reason": args.reason} if args.reason else {})}
         return _send(args, zone, agent, payload)
     return 2
 

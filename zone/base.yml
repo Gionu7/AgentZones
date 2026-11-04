@@ -40,7 +40,8 @@ services:
       AGENT_BLAS_THREADS: ${AGENT_BLAS_THREADS:-2}
       HTTPS_PROXY: ${AGENT_HTTPS_PROXY:-}
       HTTP_PROXY: ${AGENT_HTTP_PROXY:-}
-      NO_PROXY: gateway,ollama,localhost,127.0.0.1
+      NO_PROXY: gateway,ollama,host.docker.internal,localhost,127.0.0.1
+    extra_hosts: ["host.docker.internal:host-gateway"]   # a model server on the host (host-llm)
     volumes:
       - ${HOST_CA_BUNDLE:-/dev/null}:/etc/agentzones/extra-ca.crt:ro
     restart: unless-stopped
@@ -66,24 +67,74 @@ services:
       AGENT_NAME: proxy-doctor
       AGENT_IMPL: proxy_doctor.agent:ProxyDoctor
       DATA_DIR: /data
-      MODEL_URL: http://ollama:11434/v1
+      MODEL_URL: ${MODEL_URL:-http://ollama:11434/v1}
       MODEL_NAME: ${MODEL_NAME:-qwen2.5:1.5b}
 
-  assistant:   # generic tool-calling agent on the local model (COMPOSE_PROFILES=llm)
+  assistant:   # generic tool-calling agent on the local model (COMPOSE_PROFILES=llm or host-llm)
     extends: { service: agent }
-    profiles: [llm]
+    profiles: [llm, host-llm]
     environment:
       AGENT_NAME: assistant
       AGENT_IMPL: agentzones.llm_agent:LLMAgent
-      MODEL_URL: http://ollama:11434/v1
+      MODEL_URL: ${MODEL_URL:-http://ollama:11434/v1}
       MODEL_NAME: ${MODEL_NAME:-qwen2.5:1.5b}
-      MCP_SERVERS: '[{"name": "proxy", "command": "python", "args": ["-m", "proxy_doctor.mcp_server"]}]'
-      TOOLS: proxy.*
+      MCP_SERVERS: '[{"name": "proxy", "command": "python", "args": ["-m", "proxy_doctor.mcp_server"]},
+                     {"name": "zone_mcp", "command": "agentzone", "args": ["mcp", "--stdio"]}]'
+      TOOLS: proxy.*,zone_mcp.fl_*
 
-  ollama:   # local LLM (COMPOSE_PROFILES=llm); pulls MODEL_NAME on first start
+  code-assistant:   # answers questions about the code in CODE_DIR (read-only), on the local model
+    extends: { service: agent }
+    profiles: [llm, host-llm]
+    environment:
+      AGENT_NAME: code-assistant
+      AGENT_IMPL: agentzones.llm_agent:LLMAgent
+      AGENT_DESCRIPTION: Answers questions about the code in this zone (read-only)
+      AGENT_CAPABILITIES: code
+      MODEL_URL: ${MODEL_URL:-http://ollama:11434/v1}
+      MODEL_NAME: ${MODEL_NAME:-qwen2.5:1.5b}
+      SYSTEM_PROMPT: >-
+        You answer questions about the code in the code folder. Use list_files and search to find the
+        relevant files, then read_file to read them, and cite file paths and line numbers. Say so when you
+        did not find something. Never invent code.
+      MCP_SERVERS: '[{"name": "code", "command": "python", "args": ["-m", "agentzones.code_mcp"], "env": {"CODE_ROOT": "/code"}}]'
+      TOOLS: code.*
+      LLM_REMOTE_TOOLS: ${CODE_REMOTE_TOOLS:-}   # code.* lets other zones read this code through it
+      MAX_STEPS: "10"
+    volumes:
+      - ${CODE_DIR:-..}:/code:ro
+
+  # ---- local model -------------------------------------------------------------------------------
+  # Agents ask for MODEL_NAME at MODEL_URL (any OpenAI-compatible server).
+  #   COMPOSE_PROFILES=llm       an Ollama container in the zone (NVIDIA GPU: AGENTZONES_GPU=1)
+  #   COMPOSE_PROFILES=host-llm  the host's model server: MODEL_URL=http://host.docker.internal:11434/v1
+  # model-setup gets MODEL_NAME into Ollama from MODEL_SOURCE (default: MODEL_NAME):
+  #   qwen2.5:3b | hf.co/<org>/<repo>-GGUF:Q4_K_M | https://.../model.gguf | /local-models/<file>.gguf
+  # (/local-models is this repo's models/ folder; see docs/MODELS.md)
+  ollama:
     image: ${OLLAMA_IMAGE:-ollama/ollama:0.12.6}
     profiles: [llm]
-    entrypoint: ["sh", "-c", "ollama serve & sleep 3; ollama pull ${MODEL_NAME:-qwen2.5:1.5b}; wait"]
     environment:
-      HTTPS_PROXY: ${AGENT_HTTPS_PROXY:-}
+      HTTPS_PROXY: ${AGENT_HTTPS_PROXY:-}   # for pulls from registry.ollama.ai / hf.co
+      OLLAMA_KEEP_ALIVE: 30m
+    volumes:
+      - ${HOST_CA_BUNDLE:-/dev/null}:/etc/ssl/certs/extra-ca.crt:ro
     restart: unless-stopped
+
+  model-setup:   # one-shot: pulls or creates the model, then exits
+    image: ${AGENTZONES_IMAGE:-agentzones:latest}
+    profiles: [llm, host-llm]
+    command: ["agentzone", "model", "setup"]
+    environment:
+      MODEL_URL: ${MODEL_URL:-http://ollama:11434/v1}
+      MODEL_NAME: ${MODEL_NAME:-qwen2.5:1.5b}
+      MODEL_SOURCE: ${MODEL_SOURCE:-}
+      MODEL_SHA256: ${MODEL_SHA256:-}
+      MODEL_SYSTEM: ${MODEL_SYSTEM:-}
+      MODEL_CACHE: /models-cache
+      HTTPS_PROXY: ${AGENT_HTTPS_PROXY:-}
+      NO_PROXY: ollama,host.docker.internal,localhost,127.0.0.1
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ${HOST_CA_BUNDLE:-/dev/null}:/etc/agentzones/extra-ca.crt:ro
+      - ../models:/local-models:ro
+    restart: "no"

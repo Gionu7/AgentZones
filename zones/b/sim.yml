@@ -37,6 +37,8 @@ services:
     environment: *via-proxy
   ollama:
     environment: *via-proxy
+  model-setup:
+    environment: *via-proxy
 
 networks:
   default: { internal: true }
