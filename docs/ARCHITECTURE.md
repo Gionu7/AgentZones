@@ -24,6 +24,11 @@
   through `GatewayClient.directory()` and `GatewayClient.send()`, nothing else.
 * **MCP server** ([agentzones/mcp_gateway.py](../agentzones/mcp_gateway.py)): `list_agents` and
   `send_message` over streamable HTTP (`POST /mcp`) or stdio, for Claude Desktop, IDEs and other MCP clients.
+* **Dashboard** ([agentzones/dashboard.py](../agentzones/dashboard.py)): `GET /` and `GET /dashboard/data` on
+  the local API. The gateway gathers the data itself (FL status every 1.5 s, Proxy Doctor status every 8 s,
+  shared by all open tabs) by sending messages as agent `dashboard`. The hub keeps a ring buffer of the last
+  300 messages it routed (type, size, sender, receiver; no payloads) and per-route totals. Spokes report
+  whether they use a proxy when they register; the hub tells them its zone name in return.
 * **LLM agent** ([agentzones/llm_agent.py](../agentzones/llm_agent.py)): a tool-calling loop on the local
   model with MCP tools plus `zone.list_agents` and `zone.send_message`. Agent-to-agent chains stop after two
   hops.

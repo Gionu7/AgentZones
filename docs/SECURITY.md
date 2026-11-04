@@ -62,6 +62,10 @@ So, best first:
 * **LLM agent:** refuses messages from other zones unless `LLM_ACCEPT_REMOTE=1`, since they would drive this
   zone's tools; agent-to-agent chains stop after two hops.
 * **Containers:** run as uid 10001; the local API and MCP ports are bound to `127.0.0.1`.
+* **Dashboard:** lives on the local API, so it is as private as that API. The page itself is static; its
+  data (`/dashboard/data`) and its Start / Stop buttons (`/send`) need `ZONE_API_TOKEN` when one is set. The
+  hub records message metadata only (type, size, sender, receiver), never payloads. Everything that comes
+  from other zones (agent names, descriptions, events) is escaped before it is shown.
 
 ## Known limits (next steps)
 

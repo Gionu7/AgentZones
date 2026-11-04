@@ -55,6 +55,17 @@ async def test_messaging_directory_and_auth(tmp_path):
         assert proxy.requests > 0, "b's hub traffic must go through its proxy"
         assert gws["b"].status()["hub"]["connected"]
 
+        # the hub dashboard: spokes, who uses a proxy, traffic metadata (never payloads)
+        page = await http.get(urls["az"] + "/")
+        assert page.status_code == 200 and "Agent Zones" in page.text
+        d = (await http.get(urls["az"] + "/dashboard/data")).json()
+        assert d["spokes"]["b"]["via_proxy"] is True and d["spokes"]["cn"]["via_proxy"] is False
+        assert d["totals"]["b>cn"]["messages"] >= 1 and d["totals"]["cn>b"]["messages"] >= 1
+        assert all("payload" not in m for m in d["traffic"])
+        assert not any("hello" in json.dumps(m) for m in d["traffic"])
+        d = (await http.get(urls["b"] + "/dashboard/data")).json()
+        assert d["hub"]["zone"] == "az" and "traffic" not in d
+
         code, r = await send(http, urls["b"], "cn", "nobody", {})
         assert "no agent" in r["error"]
         code, _ = await send(http, urls["b"], "mars", "echo", {})

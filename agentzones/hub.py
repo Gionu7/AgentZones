@@ -16,6 +16,7 @@ Routing rules (the hub never trusts what a spoke *claims*):
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections import deque
@@ -54,13 +55,17 @@ class Hub:
         self.deliver_local = deliver_local
         self.visibility_s, self.max_queue, self.directory_ttl_s = visibility_s, max_queue, directory_ttl_s
         self.routes: dict[str, Route] = {}
-        self.directory: dict[str, dict[str, Any]] = {}  # zone -> {"agents": [...], "seen": t}
+        self.directory: dict[str, dict[str, Any]] = {}  # zone -> {"agents": [...], "seen": t, "info": {...}}
+        # what crossed the hub, for the dashboard: metadata only (payload "type" and size), never contents
+        self.traffic: deque = deque(maxlen=300)
+        self.totals: dict[str, dict[str, int]] = {}  # "b>cn" -> {"messages": n, "bytes": n}
 
     # ------------------------------------------------------------------ directory
-    def register(self, zone: str, agents: list[dict[str, Any]]) -> None:
+    def register(self, zone: str, agents: list[dict[str, Any]], info: dict[str, Any] | None = None) -> None:
         clean = [{"agent": str(a.get("agent") or a.get("name")), "capabilities": list(a.get("capabilities") or []),
                   "description": str(a.get("description") or "")[:300]} for a in agents[:200]]
-        self.directory[zone] = {"agents": clean, "seen": time.time()}
+        info = {"via_proxy": bool((info or {}).get("via_proxy")), "version": str((info or {}).get("version", ""))[:20]}
+        self.directory[zone] = {"agents": clean, "seen": time.time(), "info": info}
 
     def remote_entries(self) -> list[dict[str, Any]]:
         now = time.time()
@@ -71,7 +76,8 @@ class Hub:
         now = time.time()
         return {z: {"queued": len(m.queue), "inflight": len(m.inflight),
                     "last_poll_s": round(now - m.last_poll, 1) if m.last_poll else None,
-                    "agents": len(self.directory.get(z, {}).get("agents", []))}
+                    "agents": len(self.directory.get(z, {}).get("agents", [])),
+                    **self.directory.get(z, {}).get("info", {})}
                 for z, m in self.mailboxes.items()}
 
     # ------------------------------------------------------------------ routing
@@ -91,10 +97,23 @@ class Hub:
             if target != self.zone and target not in self.mailboxes:
                 raise RoutingError(f"unknown zone {target!r}")
             self.routes[msg["id"]] = Route(sender, target, float(msg.get("expires") or now + 300))
+        self._record(msg, now)
         if msg["to_zone"] == self.zone:
             await self.deliver_local(msg)
         else:
             self._enqueue(msg["to_zone"], msg)
+
+    def _record(self, msg: Message, now: float) -> None:
+        payload = msg.get("payload")
+        size = len(json.dumps(payload, separators=(",", ":"), default=str))
+        ptype = payload.get("type") if isinstance(payload, dict) else None
+        self.traffic.append({"t": round(now, 3), "kind": msg["kind"], "from_zone": msg["from_zone"],
+                             "from_agent": msg.get("from_agent"), "to_zone": msg["to_zone"],
+                             "to_agent": msg.get("to_agent"), "type": ptype if isinstance(ptype, str) else None,
+                             "bytes": size, "status": payload.get("status") if isinstance(payload, dict) else None})
+        tot = self.totals.setdefault(f"{msg['from_zone']}>{msg['to_zone']}", {"messages": 0, "bytes": 0})
+        tot["messages"] += 1
+        tot["bytes"] += size
 
     def _enqueue(self, zone: str, msg: Message) -> None:
         box = self.mailboxes[zone]

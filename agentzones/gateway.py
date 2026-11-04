@@ -6,6 +6,7 @@ Local API (zone network only, published on 127.0.0.1)::
     GET  /directory?capability=fl-client:*                          agents in all zones
     POST /send  {target_zone, target_agent, payload, timeout?}      request -> reply payload
     GET  /status, /health
+    GET  /  and /dashboard/data                                     the zone dashboard (dashboard.py)
 
 Hub API (role ``hub`` only, a separate port that spokes reach)::
 
@@ -36,6 +37,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
 from . import __version__
+from .dashboard import add_dashboard
 from .hub import Hub, Message, RoutingError
 from .security import RequestVerifier, parse_tokens, sign_request, sign_response, verify_response
 
@@ -141,7 +143,7 @@ class Gateway:
             if s.role == "hub" else None
         self.verifier = RequestVerifier(s.spoke_tokens) if s.role == "hub" else None
         self.hub_client = HubClient(s) if s.role == "spoke" else None
-        self.hub_state: dict[str, Any] = {"connected": False, "last_ok": None, "last_error": None}
+        self.hub_state: dict[str, Any] = {"connected": False, "last_ok": None, "last_error": None, "zone": None}
         self._remote_dir: tuple[float, list[dict[str, Any]]] = (0.0, [])
         self._seen: dict[str, float] = {}
         self._tasks: list[asyncio.Task] = []
@@ -304,7 +306,9 @@ class Gateway:
         assert self.hub_client
         while True:
             try:
-                await self.hub_client.call("POST", "/hub/register", {"agents": self.local_entries()})
+                r = await self.hub_client.call("POST", "/hub/register", {
+                    "agents": self.local_entries(), "info": {"via_proxy": bool(self.s.hub_proxy), "version": __version__}})
+                self.hub_state["zone"] = r.get("hub_zone")
                 self._hub_ok()
             except asyncio.CancelledError:
                 raise
@@ -349,7 +353,7 @@ def local_app(gw: Gateway) -> FastAPI:
 
     @app.middleware("http")
     async def _auth(request: Request, call_next):
-        if gw.s.api_token and request.url.path != "/health":
+        if gw.s.api_token and request.url.path not in ("/health", "/"):  # the page itself holds no data
             if request.headers.get("authorization") != f"Bearer {gw.s.api_token}":
                 return JSONResponse({"detail": "missing or bad bearer token"}, status_code=401)
         return await call_next(request)
@@ -357,6 +361,8 @@ def local_app(gw: Gateway) -> FastAPI:
     @app.get("/health")
     async def health():
         return {"ok": True, "zone": gw.zone, "role": gw.s.role}
+
+    add_dashboard(app, gw)
 
     @app.get("/status")
     async def status():
@@ -424,10 +430,11 @@ def hub_app(gw: Gateway) -> FastAPI:
     async def register(request: Request):
         zone, nonce, raw = await authed(request)
         known = zone in hub.directory
-        hub.register(zone, (json.loads(raw or b"{}").get("agents") or []))
+        body = json.loads(raw or b"{}")
+        hub.register(zone, body.get("agents") or [], body.get("info") or {})
         if not known:
             gw.event("hub", f"spoke {zone} connected")
-        return signed(zone, nonce, {"ok": True})
+        return signed(zone, nonce, {"ok": True, "hub_zone": gw.zone})
 
     @app.get("/hub/directory")
     async def directory(request: Request):

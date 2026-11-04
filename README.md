@@ -109,6 +109,22 @@ python -m agentzones.cli --gateway http://127.0.0.1:8081 ask proxy-doctor "pip f
 
 Training the student and the small LLM is covered in [docs/DISTILLATION.md](docs/DISTILLATION.md).
 
+## Dashboard
+
+Every gateway serves a live dashboard on its local API: **http://127.0.0.1:8080/** for the hub (b: 8081,
+cn: 8082). It needs nothing from the internet, so it also works on an offline VM.
+
+The hub's dashboard shows the whole network:
+- the zones, whether each spoke is polling, which ones go through a proxy, and their mailboxes;
+- messages crossing the hub as moving dots, colour-coded (federated learning, Proxy Doctor, replies);
+- every federated-learning job, with an accuracy chart, the clients in each round, and Start / Stop buttons;
+- the agents of all zones, with Proxy Doctor's verified fixes and whether it uses the federated model;
+- a log of what crossed the hub, and events such as rejected requests.
+
+The hub only records each message's type and size, never its contents. A spoke's dashboard shows its own view:
+its hub connection, the directory and the FL jobs. If `ZONE_API_TOKEN` is set, open the page as
+`http://127.0.0.1:8080/#token=<token>`.
+
 ## Try it without Docker
 
 ```bash
@@ -120,7 +136,8 @@ python scripts/demo.py
 ```
 
 The demo runs az, cn and b in one process, with b's traffic going through a small HTTP proxy, and goes through
-messaging, Proxy Doctor, federated learning and a rejected token. `--keep` leaves the zones running.
+messaging, Proxy Doctor, federated learning and a rejected token. `--keep` leaves the zones running on the same
+ports as the Docker zones, with the hub dashboard at http://127.0.0.1:8080/.
 
 ## Run locally with Docker (all three zones on one host)
 
@@ -220,6 +237,7 @@ complete federated-learning run.
 | Path | What |
 |---|---|
 | `agentzones/gateway.py`, `hub.py`, `security.py` | gateway (local API + hub API), mailboxes and routing, signing |
+| `agentzones/dashboard.py`, `static/dashboard.html` | the zone dashboard |
 | `agentzones/agent.py`, `llm_agent.py`, `mcp_gateway.py` | agent base class and host, LLM agent, zone MCP server |
 | `agentzones/fl/` | generic FL: plugin interfaces, client and aggregator agents |
 | `tasks/` | FL plugins (MNIST, Proxy Doctor student) |

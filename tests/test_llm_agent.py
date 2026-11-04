@@ -62,3 +62,4 @@ async def test_llm_agent_uses_mcp_and_zone_tools():
         text, err = await c.call_tool("send_message", {"zone": "solo", "agent": "echo", "payload": {"x": 1}})
         assert not err and json.loads(text)["echo"] == {"x": 1}
         await c.close()
+

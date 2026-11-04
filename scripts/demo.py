@@ -63,8 +63,19 @@ class Server:
         await self.task
 
 
-async def gateway(stack, **kw) -> tuple[Gateway, str, str | None]:
-    s = GatewaySettings(host="127.0.0.1", port=free_port(), hub_port=free_port(), poll_wait_s=10,
+def port_or_free(port: int) -> int:
+    import socket
+    with socket.socket() as s:
+        try:
+            s.bind(("127.0.0.1", port))
+            return port
+        except OSError:
+            return free_port()
+
+
+async def gateway(stack, port: int = 0, hub_port: int = 0, **kw) -> tuple[Gateway, str, str | None]:
+    s = GatewaySettings(host="127.0.0.1", port=port_or_free(port) if port else free_port(),
+                        hub_port=port_or_free(hub_port) if hub_port else free_port(), poll_wait_s=10,
                         register_interval_s=2, **kw)
     gw = Gateway(s)
     await stack.enter_async_context(Server(local_app(gw), s.port))
@@ -95,11 +106,13 @@ async def main(keep: bool, rounds: int) -> int:
 
         proxy = await stack.enter_async_context(ForwardProxy())
         gws, urls = {}, {}
-        gws["az"], urls["az"], hub_url = await gateway(stack, zone="az", role="hub", spoke_tokens=TOKENS)
-        gws["cn"], urls["cn"], _ = await gateway(stack, zone="cn", role="spoke", hub_url=hub_url,
+        fixed = {"az": 8080, "b": 8081, "cn": 8082, "hub": 9090} if keep else {}  # same ports as the Docker zones
+        gws["az"], urls["az"], hub_url = await gateway(stack, fixed.get("az", 0), fixed.get("hub", 0), zone="az",
+                                                       role="hub", spoke_tokens=TOKENS)
+        gws["cn"], urls["cn"], _ = await gateway(stack, fixed.get("cn", 0), zone="cn", role="spoke", hub_url=hub_url,
                                                  hub_token=TOKENS["cn"])
-        gws["b"], urls["b"], _ = await gateway(stack, zone="b", role="spoke", hub_url=hub_url, hub_token=TOKENS["b"],
-                                               hub_proxy=proxy.url)
+        gws["b"], urls["b"], _ = await gateway(stack, fixed.get("b", 0), zone="b", role="spoke", hub_url=hub_url,
+                                               hub_token=TOKENS["b"], hub_proxy=proxy.url)
         for z in ("az", "cn", "b"):
             model = work / z / "proxy-student.npz"
             await agent(stack, urls[z], "echo", "agentzones.agent:EchoAgent")
@@ -180,6 +193,7 @@ async def main(keep: bool, rounds: int) -> int:
 
         print(f"\n{G if ok else R}{B}demo {'passed' if ok else 'FAILED'}{X}")
         if keep:
+            print(f"\n{B}Hub dashboard: {urls['az']}/{X}   (spokes: {urls['b']}/ and {urls['cn']}/)")
             print(f"\nZones keep running. Try:\n  curl -s {urls['cn']}/send -H 'content-type: application/json' "
                   "-d '{\"target_zone\":\"b\",\"target_agent\":\"pd-aggregator\",\"payload\":{\"type\":\"fl.status\"}}'"
                   f"\n  python -m agentzones.cli --gateway {urls['b']} directory\nCtrl+C to stop.")

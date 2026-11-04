@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Zones</title>
+<style>
+:root {
+  --bg: #f5f6f8; --card: #ffffff; --ink: #18202b; --muted: #637083; --faint: #98a2b3; --line: #e3e7ed;
+  --soft: #f0f2f5; --accent: #4f46e5; --accent-soft: #eef0ff; --teal: #0f8a7e; --teal-soft: #e6f6f4;
+  --amber: #b86e00; --amber-soft: #fff4e0; --red: #d1342f; --red-soft: #fdeceb; --green: #178a46;
+  --green-soft: #e7f6ed; --node: #ffffff; --hub: #18202b; --hub-ink: #ffffff;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 3px rgba(16, 24, 40, .06);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0c1016; --card: #141a22; --ink: #e6ebf1; --muted: #93a0b0; --faint: #66727f; --line: #263040;
+    --soft: #1b2230; --accent: #8b8cf9; --accent-soft: #23254a; --teal: #3cc7b5; --teal-soft: #11302d;
+    --amber: #f0a73c; --amber-soft: #352610; --red: #f2665f; --red-soft: #3a1716; --green: #4cc97f;
+    --green-soft: #12301f; --node: #1b2230; --hub: #e6ebf1; --hub-ink: #0c1016;
+    --shadow: none; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI",
+  Roboto, "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+.num, td.t, .mono { font-variant-numeric: tabular-nums; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+.wrap { max-width: 1440px; margin: 0 auto; padding: 20px 24px 40px; }
+header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
+.zone-badge { display: inline-flex; gap: 6px; align-items: center; padding: 3px 10px; border-radius: 999px;
+  background: var(--hub); color: var(--hub-ink); font-weight: 600; font-size: 13px; }
+.live { margin-left: auto; color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; }
+.dot.off { background: var(--red); }
+.stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+  box-shadow: var(--shadow); }
+.stat .k { color: var(--muted); font-size: 12px; }
+.stat .v { font-size: 24px; font-weight: 650; letter-spacing: -.02em; margin-top: 2px; }
+.stat .v small { font-size: 13px; color: var(--muted); font-weight: 500; margin-left: 4px; }
+.stat.warn .v { color: var(--red); }
+.grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; margin-bottom: 16px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
+  min-width: 0; display: flex; flex-direction: column; }
+.card > h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0;
+  padding: 14px 16px 0; display: flex; align-items: center; gap: 10px; }
+.card > h2 .right { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.body { padding: 12px 16px 16px; min-width: 0; }
+svg text { font-family: inherit; }
+#topo { width: 100%; height: auto; display: block; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); font-size: 12px; padding: 0 16px 14px; }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px;
+  vertical-align: -1px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--soft); color: var(--muted);
+  font-size: 12px; white-space: nowrap; }
+.chip.fl { background: var(--accent-soft); color: var(--accent); }
+.chip.pd { background: var(--teal-soft); color: var(--teal); }
+.badge { display: inline-block; padding: 2px 9px; border-radius: 6px; font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .03em; }
+.s-done { background: var(--green-soft); color: var(--green); }
+.s-running { background: var(--accent-soft); color: var(--accent); }
+.s-waiting_for_clients { background: var(--amber-soft); color: var(--amber); }
+.s-failed, .s-stopped { background: var(--red-soft); color: var(--red); }
+.s-idle { background: var(--soft); color: var(--muted); }
+.fl-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.fl-head .job { font-size: 18px; font-weight: 650; }
+.fl-head .where { color: var(--muted); font-size: 13px; }
+.bigline { display: flex; gap: 24px; margin: 12px 0 6px; flex-wrap: wrap; }
+.bigline .v { font-size: 30px; font-weight: 650; letter-spacing: -.02em; }
+.bigline .k { color: var(--muted); font-size: 12px; }
+.bar { height: 6px; background: var(--soft); border-radius: 99px; overflow: hidden; margin: 6px 0 14px; }
+.bar > div { height: 100%; background: var(--accent); border-radius: 99px; transition: width .4s; }
+#chart { width: 100%; height: auto; display: block; }
+.controls { display: flex; gap: 8px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+.controls input { width: 70px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--card); color: var(--ink); font: inherit; }
+button { font: inherit; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line); cursor: pointer;
+  background: var(--card); color: var(--ink); font-weight: 550; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+select { font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card);
+  color: var(--ink); }
+.msg { color: var(--muted); font-size: 13px; }
+.err { color: var(--red); font-size: 13px; }
+.zones { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.zone { border: 1px solid var(--line); border-radius: 12px; padding: 12px; min-width: 0; }
+.zone h3 { margin: 0 0 8px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.zone h3 .role { color: var(--muted); font-weight: 400; font-size: 12px; }
+.agent { padding: 8px 0; border-top: 1px solid var(--line); }
+.agent:first-of-type { border-top: 0; padding-top: 2px; }
+.agent .n { font-weight: 600; overflow-wrap: anywhere; }
+.agent .d { color: var(--muted); font-size: 12px; margin: 2px 0 6px; overflow-wrap: anywhere; }
+.agent .x { color: var(--teal); font-size: 12px; margin-top: 4px; }
+.table-wrap { overflow: auto; max-height: 430px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; padding: 6px 8px;
+  border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--card); }
+td { padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td.t { color: var(--muted); }
+td.size { text-align: right; color: var(--muted); }
+tr.reply td { color: var(--muted); }
+tr.fresh td { animation: flash 1.6s ease-out; }
+@keyframes flash { from { background: var(--accent-soft); } to { background: transparent; } }
+.arrow { color: var(--faint); padding: 0 5px; }
+td.route { white-space: normal; }
+label.tog { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted);
+  text-transform: none; letter-spacing: 0; font-weight: 400; cursor: pointer; }
+.events { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow: auto; }
+.ev { display: grid; grid-template-columns: 70px 80px minmax(0, 1fr); gap: 10px; padding: 4px 0; font-size: 13px;
+  border-bottom: 1px solid var(--line); }
+.ev .t { color: var(--muted); }
+.ev .kind { color: var(--muted); }
+.ev.security { color: var(--red); }
+.ev.security .kind { color: var(--red); font-weight: 600; }
+.empty { color: var(--muted); padding: 18px 0; text-align: center; font-size: 13px; }
+@media (max-width: 1100px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 720px) {
+  .wrap { padding: 14px 16px 30px; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .live { margin-left: 0; width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { tr.fresh td { animation: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Agent Zones</h1>
+    <span class="zone-badge" id="zoneBadge">…</span>
+    <span class="live"><span class="dot" id="liveDot"></span><span id="liveText">connecting…</span></span>
+  </header>
+
+  <section class="stats" id="stats" aria-label="Summary"></section>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Network <span class="right msg" id="topoNote"></span></h2>
+      <div class="body" style="padding-bottom:6px"><svg id="topo" viewBox="0 0 800 400" role="img"
+        aria-label="Zones and the messages between them"></svg></div>
+      <div class="legend">
+        <span><i style="background:var(--accent)"></i>federated learning</span>
+        <span><i style="background:var(--teal)"></i>Proxy Doctor</span>
+        <span><i style="background:var(--faint)"></i>other</span>
+        <span><i style="background:transparent;border:2px solid var(--muted);width:9px;height:9px"></i>reply</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Federated learning <span class="right" id="jobPick"></span></h2>
+      <div class="body" id="fl"><div class="empty">No aggregator in the directory yet.</div></div>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Agents</h2>
+      <div class="body"><div class="zones" id="zones"></div></div>
+    </div>
+    <div class="card">
+      <h2>Traffic through the hub
+        <span class="right"><label class="tog"><input type="checkbox" id="showDash"> show dashboard polling</label></span>
+      </h2>
+      <div class="body">
+        <div class="table-wrap"><table>
+          <thead><tr><th>time</th><th>route</th><th>message</th><th style="text-align:right">size</th></tr></thead>
+          <tbody id="traffic"></tbody>
+        </table></div>
+        <div class="msg" id="trafficNote" style="margin-top:8px"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Events <span class="right msg" id="evNote">gateway of this zone</span></h2>
+    <div class="body"><div class="events" id="events"></div></div>
+  </section>
+</div>
+
+<script>
+"use strict";
+const TOKEN = new URLSearchParams(location.hash.slice(1)).get("token") || "";
+const HEADERS = TOKEN ? { authorization: "Bearer " + TOKEN } : {};
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtTime = (t) => new Date(t * 1000).toLocaleTimeString([], { hour12: false });
+const fmtBytes = (n) => n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(1) + " MB";
+const fmtPct = (v) => (v * 100).toFixed(1) + "%";
+const isDash = (m) => m.from_agent === "dashboard" || m.to_agent === "dashboard";
+const family = (type) => !type ? "other" : type.startsWith("fl.") ? "fl" : type.startsWith("pd.") ? "pd" : "other";
+const COLOR = { fl: "var(--accent)", pd: "var(--teal)", other: "var(--faint)" };
+
+let snap = null, lastTraffic = null, selectedJob = null, busy = false, packets = [];
+
+// ------------------------------------------------------------------ data
+async function refresh() {
+  if (busy) return;
+  busy = true;
+  try {
+    const r = await fetch("dashboard/data", { headers: HEADERS, cache: "no-store" });
+    if (r.status === 401) throw new Error("this zone needs its API token: add #token=… to the URL");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    snap = await r.json();
+    render();
+    $("liveDot").className = "dot";
+    $("liveText").textContent = "live · " + fmtTime(snap.t);
+  } catch (e) {
+    $("liveDot").className = "dot off";
+    $("liveText").textContent = e.message || "gateway unreachable";
+  } finally { busy = false; }
+}
+
+function zonesOf(s) {
+  // zone -> {role, online, last_poll_s, via_proxy, queued, inflight, agents: [...]}
+  const zones = {};
+  const add = (z) => zones[z] ??= { zone: z, agents: [] };
+  add(s.zone).role = s.role;
+  for (const [z, info] of Object.entries(s.spokes || {})) {
+    const { agents: _count, ...rest } = info;  // the agent list comes from the directory
+    Object.assign(add(z), rest, { role: "spoke" });
+  }
+  for (const e of s.directory) add(e.zone).agents.push(e);
+  if (s.hub) {  // a spoke's view: the hub told us its zone name when we registered
+    if (s.hub.zone) add(s.hub.zone).role = "hub";
+    for (const z of Object.values(zones)) z.role ??= "spoke";
+  }
+  const limit = (s.poll_wait_s || 20) + 15;
+  for (const z of Object.values(zones)) {
+    if (z.role === "spoke" && s.role === "hub") z.online = z.last_poll_s !== null && z.last_poll_s !== undefined && z.last_poll_s < limit;
+    else if (s.role === "spoke") z.online = z.zone === s.zone || (!!(s.hub && s.hub.connected) && z.agents.length > 0);
+    else z.online = true;
+  }
+  return zones;
+}
+
+// ------------------------------------------------------------------ render
+function render() {
+  const s = snap, zones = zonesOf(s);
+  $("zoneBadge").textContent = s.zone + " · " + s.role;
+  document.title = "Agent Zones · " + s.zone;
+  renderStats(s, zones);
+  renderTopology(s, zones);
+  if (document.activeElement?.id !== "roundsIn") renderFL(s);  // don't steal focus while typing
+  renderZones(s, zones);
+  renderTraffic(s);
+  renderEvents(s);
+}
+
+function renderStats(s, zones) {
+  const spokes = Object.values(zones).filter((z) => z.role === "spoke");
+  const online = spokes.filter((z) => z.online).length;
+  const totals = Object.values(s.totals || {});
+  const msgs = totals.reduce((a, t) => a + t.messages, 0), bytes = totals.reduce((a, t) => a + t.bytes, 0);
+  const rejected = s.events.filter((e) => e.kind === "security").length;
+  const items = s.role === "hub" ? [
+    ["Spokes online", online + "<small>/ " + spokes.length + "</small>", false],
+    ["Agents", s.directory.length + "<small>in " + Object.keys(zones).length + " zones</small>", false],
+    ["Messages via hub", msgs.toLocaleString(), false],
+    ["Data via hub", fmtBytes(bytes), false],
+    ["Rejected requests", rejected, rejected > 0],
+  ] : [
+    ["Hub", s.hub && s.hub.connected ? "connected" : "unreachable", !(s.hub && s.hub.connected)],
+    ["Via proxy", s.hub && s.hub.proxy ? "yes" : "no", false],
+    ["Agents", s.directory.length + "<small>in " + Object.keys(zones).length + " zones</small>", false],
+    ["Local agents", s.agents.length, false],
+    ["Uptime", Math.round(s.uptime_s / 60) + "<small>min</small>", false],
+  ];
+  $("stats").innerHTML = items.map(([k, v, warn]) =>
+    `<div class="stat${warn ? " warn" : ""}"><div class="k">${k}</div><div class="v num">${v}</div></div>`).join("");
+}
+
+// --- topology
+let NODE_W = 178, NODE_H = 96, layout = {};
+function renderTopology(s, zones) {
+  const svg = $("topo");
+  const narrow = svg.clientWidth > 0 && svg.clientWidth < 600;
+  const W = narrow ? 440 : 800, H = narrow ? 420 : 400;
+  NODE_W = narrow ? 200 : 196;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const hubZone = Object.values(zones).find((z) => z.role === "hub");
+  const spokes = Object.values(zones).filter((z) => z.role !== "hub").sort((a, b) => a.zone.localeCompare(b.zone));
+  layout = {};
+  if (hubZone) layout[hubZone.zone] = { x: W / 2, y: H - 76 };
+  spokes.forEach((z, i) => layout[z.zone] = { x: narrow && spokes.length > 1 ? 4 + NODE_W / 2 + (W - 8 - NODE_W) * i / (spokes.length - 1)
+                                                                            : W * (i + 1) / (spokes.length + 1), y: 60 });
+  const pathFor = (z) => {
+    const a = layout[z], b = layout[hubZone.zone];
+    const y1 = a.y + NODE_H / 2, y2 = b.y - NODE_H / 2, my = (y1 + y2) / 2;
+    return `M${a.x},${y1} C${a.x},${my} ${b.x},${my} ${b.x},${y2}`;
+  };
+  let out = "", badges = "";
+  if (hubZone) for (const z of spokes) {
+    const d = pathFor(z.zone), ok = z.online;
+    out += `<path id="edge-${esc(z.zone)}" d="${d}" fill="none" stroke="${ok ? "var(--line)" : "var(--red)"}"
+      stroke-width="${ok ? 3 : 2}" ${ok ? "" : 'stroke-dasharray="6 6"'}/>`;
+    const a = layout[z.zone], b = layout[hubZone.zone];
+    const mx = (a.x + b.x) / 2, my = (a.y + NODE_H / 2 + b.y - NODE_H / 2) / 2;
+    if (z.via_proxy || (s.role === "spoke" && z.zone === s.zone && s.hub && s.hub.proxy)) {
+      badges += `<g><rect x="${mx - 30}" y="${my - 12}" width="60" height="24" rx="6" fill="var(--amber-soft)"
+        stroke="var(--amber)" stroke-width="1"/><text x="${mx}" y="${my + 4.5}" text-anchor="middle"
+        font-size="12" font-weight="600" fill="var(--amber)">proxy</text></g>`;
+    }
+  }
+  out += `<g id="packets"></g>` + badges;  // packets pass under the proxy badge
+  for (const z of Object.values(zones)) {
+    const p = layout[z.zone]; if (!p) continue;
+    const hub = z.role === "hub", x = p.x - NODE_W / 2, y = p.y - NODE_H / 2;
+    const sub = hub ? "hub · accepts connections" : z.zone === s.zone && s.role === "spoke" ? "spoke · this zone" : "spoke · outbound only";
+    const poll = !hub && z.last_poll_s !== undefined && z.last_poll_s !== null ? `polled ${z.last_poll_s.toFixed(1)} s ago` : "";
+    const box = hub ? (s.role === "hub" ? "mailboxes for " + spokes.length + " spokes" : "")
+      : !z.online ? "offline" : z.queued !== undefined ? `mailbox: ${z.queued} queued · ${z.inflight} in flight` : "";
+    const sub2 = hub ? "" : box;
+    out += `<g><rect x="${x}" y="${y}" width="${NODE_W}" height="${NODE_H}" rx="14"
+      fill="${hub ? "var(--hub)" : "var(--node)"}" stroke="${hub ? "var(--hub)" : z.online ? "var(--line)" : "var(--red)"}" stroke-width="1.5"/>
+      <circle cx="${x + 18}" cy="${y + 22}" r="4.5" fill="${z.online ? "var(--green)" : "var(--red)"}"/>
+      <text x="${x + 30}" y="${y + 27}" font-size="17" font-weight="700" fill="${hub ? "var(--hub-ink)" : "var(--ink)"}">${esc(z.zone)}</text>
+      <text x="${x + 14}" y="${y + 48}" font-size="11.5" fill="${hub ? "var(--hub-ink)" : "var(--muted)"}" opacity="${hub ? .75 : 1}">${esc(sub)}</text>
+      <text x="${x + 14}" y="${y + 66}" font-size="11.5" fill="${hub ? "var(--hub-ink)" : "var(--muted)"}" opacity="${hub ? .75 : 1}">${z.agents.length} agents${poll ? " · " + poll : ""}</text>
+      <text x="${x + 14}" y="${y + 84}" font-size="11.5" fill="${z.online ? (hub ? "var(--hub-ink)" : "var(--muted)") : "var(--red)"}" opacity="${hub ? .75 : 1}">${esc(hub ? box : sub2)}</text></g>`;
+  }
+  if (!hubZone) out += `<text x="${W / 2}" y="230" text-anchor="middle" fill="var(--muted)" font-size="13">standalone zone: no hub</text>`;
+  svg.innerHTML = out;
+  $("topoNote").textContent = s.role === "hub" ? "spokes long-poll the hub; nothing connects into a spoke" :
+    s.role === "spoke" ? "this zone only makes outbound calls" : "";
+}
+
+function launchPackets(msgs) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const hubZone = Object.keys(layout).find((z) => layout[z].y > 200);
+  msgs.slice(-24).forEach((m, i) => {
+    const legs = [];
+    if (m.from_zone !== hubZone) legs.push({ edge: m.from_zone, reverse: false });
+    if (m.to_zone !== hubZone) legs.push({ edge: m.to_zone, reverse: true });
+    if (!legs.length) return;
+    packets.push({ legs, family: family(m.type), reply: m.kind === "reply", start: performance.now() + i * 70,
+                   big: m.bytes > 50000 });
+  });
+}
+
+function animate(now) {
+  const g = document.getElementById("packets");
+  if (g) {
+    const LEG_MS = 650;
+    packets = packets.filter((p) => now - p.start < p.legs.length * LEG_MS);
+    let html = "";
+    for (const p of packets) {
+      const t = now - p.start; if (t < 0) continue;
+      const leg = p.legs[Math.min(Math.floor(t / LEG_MS), p.legs.length - 1)];
+      const path = document.getElementById("edge-" + leg.edge); if (!path) continue;
+      let f = (t % LEG_MS) / LEG_MS; f = f < .5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2;
+      const len = path.getTotalLength(), pt = path.getPointAtLength((leg.reverse ? f : 1 - f) * len);
+      const c = COLOR[p.family], r = p.big ? 8 : 5.5;
+      html += p.reply ? `<circle cx="${pt.x}" cy="${pt.y}" r="${r}" fill="var(--card)" stroke="${c}" stroke-width="2.5"/>`
+                      : `<circle cx="${pt.x}" cy="${pt.y}" r="${r}" fill="${c}"/>`;
+    }
+    g.innerHTML = html;
+  }
+  requestAnimationFrame(animate);
+}
+
+// --- federated learning
+function metricOf(history) {
+  const keys = history.length ? Object.keys(history[history.length - 1]) : [];
+  return ["test_acc", "global_acc", "accuracy", "acc"].find((k) => keys.includes(k)) ||
+         keys.find((k) => /acc/.test(k) && !k.startsWith("client_")) || keys.find((k) => /acc/.test(k));
+}
+
+function renderFL(s) {
+  const jobs = s.fl || [];
+  if (!jobs.length) { $("fl").innerHTML = `<div class="empty">No aggregator in the directory yet.</div>`; $("jobPick").innerHTML = ""; return; }
+  const ids = jobs.map((j) => j.job + "@" + j.zone);
+  if (!ids.includes(selectedJob)) selectedJob = ids[0];
+  $("jobPick").innerHTML = jobs.length > 1 ? `<select id="jobSel" aria-label="Job">${ids.map((id) =>
+    `<option${id === selectedJob ? " selected" : ""}>${esc(id)}</option>`).join("")}</select>` : "";
+  const sel = $("jobSel"); if (sel) sel.onchange = () => { selectedJob = sel.value; renderFL(snap); };
+  const j = jobs[ids.indexOf(selectedJob)], st = j.status;
+  const el = $("fl");
+  const keepRounds = ($("roundsIn") || {}).value;
+  if (!st) { el.innerHTML = `<div class="fl-head"><span class="job">${esc(j.job)}</span></div><p class="err">${esc(j.error || "no status")}</p>`; return; }
+  const hist = st.history || [], metric = metricOf(hist), last = hist[hist.length - 1];
+  const pct = st.rounds ? Math.min(100, 100 * st.round / st.rounds) : 0;
+  const active = st.state === "running" || st.state === "waiting_for_clients";
+  el.innerHTML = `
+    <div class="fl-head"><span class="job">${esc(j.job)}</span><span class="badge s-${esc(st.state)}">${esc(st.state.replaceAll("_", " "))}</span>
+      <span class="where">aggregator ${esc(j.agent)}@${esc(j.zone)} · run ${st.run}</span></div>
+    <div class="bigline">
+      <div><div class="k">round</div><div class="v num">${st.round}<span class="msg"> / ${st.rounds}</span></div></div>
+      <div><div class="k">${esc(metric ? metric.replaceAll("_", " ") : "metric")}</div><div class="v num">${last && metric ? fmtPct(last[metric]) : "–"}</div></div>
+      <div><div class="k">clients last round</div><div class="v num">${last ? last.clients.length : 0}<span class="msg"> / ${j.clients.length} known</span></div></div>
+    </div>
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${st.rounds}" aria-valuenow="${st.round}"><div style="width:${pct}%"></div></div>
+    ${chart(hist, metric)}
+    <div class="chips" style="margin-top:10px">${j.clients.map((c) => {
+      const used = last && last.clients.includes(c);
+      return `<span class="chip${used ? " fl" : ""}" title="${used ? "took part in the last round" : "known client"}">${esc(c)}</span>`; }).join("")}</div>
+    ${st.error ? `<p class="err">${esc(st.error)}</p>` : ""}
+    <div class="controls">
+      <label class="msg" for="roundsIn">rounds</label><input id="roundsIn" type="number" min="1" max="500" value="${esc(keepRounds || st.rounds || 5)}">
+      <button class="primary" id="startBtn" ${active ? "disabled" : ""}>Start run</button>
+      <button id="stopBtn" ${active ? "" : "disabled"}>Stop</button>
+      <span class="msg" id="ctlMsg"></span>
+    </div>`;
+  $("startBtn").onclick = () => control(j, { type: "fl.start", rounds: parseInt($("roundsIn").value, 10) || undefined });
+  $("stopBtn").onclick = () => control(j, { type: "fl.stop" });
+}
+
+function chart(hist, metric) {
+  const W = 520, H = 170, L = 38, R = 12, T = 12, B = 26;
+  if (!metric || !hist.length) return `<svg id="chart" viewBox="0 0 ${W} ${H}"><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="var(--muted)" font-size="13">rounds will appear here</text></svg>`;
+  const r0 = hist[0].round, r1 = Math.max(hist[hist.length - 1].round, r0 + 1), vals = hist.map((h) => h[metric]);
+  const span = 1 - Math.min(...vals), stepY = span > .5 ? .25 : span > .2 ? .1 : span > .08 ? .05 : .02;
+  const lo = Math.max(0, Math.floor((Math.min(...vals) - stepY / 2) / stepY) * stepY), hi = 1;
+  const x = (r) => L + (W - L - R) * (r - r0) / (r1 - r0), y = (v) => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+  let g = "";
+  for (let v = lo; v <= hi + 1e-9; v += stepY) {
+    g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/>
+          <text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${Math.round(v * 100)}%</text>`;
+  }
+  const step = Math.ceil((r1 - r0 + 1) / 10);
+  for (let r = r0; r <= r1; r += step) g += `<text x="${x(r)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--muted)">${r}</text>`;
+  const pts = hist.map((h) => `${x(h.round)},${y(h[metric])}`).join(" ");
+  const area = `${x(hist[0].round)},${y(lo)} ${pts} ${x(hist[hist.length - 1].round)},${y(lo)}`;
+  const lastH = hist[hist.length - 1];
+  g += `<polygon points="${area}" fill="var(--accent)" opacity=".08"/>
+        <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+        ${hist.map((h) => `<circle cx="${x(h.round)}" cy="${y(h[metric])}" r="3.5" fill="var(--card)" stroke="var(--accent)" stroke-width="2"><title>round ${h.round}: ${fmtPct(h[metric])}</title></circle>`).join("")}
+        <text x="${Math.min(x(lastH.round), W - R - 2)}" y="${y(lastH[metric]) - 10}" text-anchor="${hist.length > 1 ? "end" : "middle"}" font-size="12" font-weight="650" fill="var(--accent)">${fmtPct(lastH[metric])}</text>`;
+  return `<svg id="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(metric)} per round">${g}</svg>`;
+}
+
+async function control(j, payload) {
+  const msg = $("ctlMsg"); msg.textContent = "sending…"; msg.className = "msg";
+  try {
+    const r = await fetch("send", { method: "POST", headers: { ...HEADERS, "content-type": "application/json" },
+      body: JSON.stringify({ from_agent: "dashboard-operator", target_zone: j.zone, target_agent: j.agent, payload, timeout: 20 }) });
+    const body = await r.json();
+    if (!r.ok || body.error) throw new Error(body.error || body.detail || "HTTP " + r.status);
+    msg.textContent = payload.type === "fl.start" ? "run started" : "run stopped";
+    setTimeout(refresh, 200);
+  } catch (e) { msg.textContent = e.message; msg.className = "err"; }
+}
+
+// --- agents
+function renderZones(s, zones) {
+  const docs = Object.fromEntries((s.doctors || []).map((d) => [d.zone + "/" + d.agent, d]));
+  const order = Object.values(zones).sort((a, b) => (a.role === "hub" ? -1 : b.role === "hub" ? 1 : a.zone.localeCompare(b.zone)));
+  $("zones").innerHTML = order.map((z) => `
+    <div class="zone"><h3><span class="dot${z.online ? "" : " off"}"></span>${esc(z.zone)}<span class="role">${esc(z.role || "")}${z.via_proxy ? " · via proxy" : ""}</span></h3>
+      ${z.agents.length ? z.agents.map((a) => {
+        const d = docs[z.zone + "/" + a.agent];
+        const extra = d && !d.error ? `<div class="x">${d.fixes} verified fix${d.fixes === 1 ? "" : "es"} · model: ${/npz$/.test(d.model || "") ? "federated" : esc(d.model || "?")}</div>` : "";
+        return `<div class="agent"><div class="n">${esc(a.agent)}</div>${a.description ? `<div class="d">${esc(a.description)}</div>` : ""}
+          <div class="chips">${a.capabilities.map((c) => `<span class="chip ${c.startsWith("fl-") ? "fl" : c === "proxy-doctor" ? "pd" : ""}">${esc(c)}</span>`).join("")}</div>${extra}</div>`;
+      }).join("") : `<div class="msg">no agents registered</div>`}
+    </div>`).join("");
+}
+
+// --- traffic
+function renderTraffic(s) {
+  if (!s.traffic) {
+    $("traffic").innerHTML = ""; $("trafficNote").textContent = "Only the hub sees traffic between zones. Open the hub's dashboard.";
+    return;
+  }
+  const all = s.traffic, show = $("showDash").checked;
+  const lastT = lastTraffic;
+  const fresh = lastT === null ? [] : all.filter((m) => m.t > lastT);
+  lastTraffic = all.length ? all[all.length - 1].t : (lastTraffic ?? 0);
+  launchPackets(fresh.filter((m) => show || !isDash(m)));
+  const rows = all.filter((m) => show || !isDash(m)).slice(-120).reverse();
+  $("traffic").innerHTML = rows.length ? rows.map((m) => `
+    <tr class="${m.kind === "reply" ? "reply" : ""}${lastT !== null && m.t > lastT ? " fresh" : ""}">
+      <td class="t">${fmtTime(m.t)}</td>
+      <td class="route">${esc(m.from_agent || "?")}<span class="msg">@${esc(m.from_zone)}</span><span class="arrow">→</span>${esc(m.to_agent || "?")}<span class="msg">@${esc(m.to_zone)}</span></td>
+      <td>${m.kind === "reply" ? `<span class="msg">reply${m.status ? " · " + esc(m.status) : ""}</span>` :
+            m.type ? `<span class="chip ${family(m.type) === "other" ? "" : family(m.type)}">${esc(m.type)}</span>` : `<span class="msg">message</span>`}</td>
+      <td class="size">${fmtBytes(m.bytes)}</td></tr>`).join("")
+    : `<tr><td colspan="4"><div class="empty">No messages between zones yet.</div></td></tr>`;
+  const hidden = all.filter(isDash).length;
+  $("trafficNote").textContent = `Message type and size only; the hub dashboard never shows payloads.` +
+    (hidden && !show ? ` ${hidden} dashboard status messages hidden.` : "");
+}
+
+function renderEvents(s) {
+  const evs = s.events.filter((e) => !(e.kind === "message" && (s.role === "hub" || /^dashboard@/.test(e.msg)))).reverse();
+  $("events").innerHTML = evs.length ? evs.map((e) => `<div class="ev ${esc(e.kind)}"><span class="t num">${fmtTime(e.t)}</span>
+    <span class="kind">${esc(e.kind)}</span><span>${esc(e.msg)}</span></div>`).join("") : `<div class="empty">No events.</div>`;
+}
+
+$("showDash").onchange = () => snap && renderTraffic(snap);
+refresh();
+setInterval(refresh, 1000);
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
