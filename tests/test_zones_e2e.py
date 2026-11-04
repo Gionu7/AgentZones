@@ -121,7 +121,7 @@ async def test_proxy_doctor_and_federated_learning_across_zones(tmp_path):
 
         async def ready():
             d = (await http.get(urls["az"] + "/directory")).json()
-            return len([e for e in d if e["capabilities"] == ["proxy-doctor"]]) == 3 and \
+            return len([e for e in d if "proxy-doctor" in e["capabilities"]]) == 3 and \
                 len([e for e in d if e["capabilities"] == ["fl-client:proxy-student"]]) == 3
         await wait_for(ready)
 
@@ -142,9 +142,9 @@ async def test_proxy_doctor_and_federated_learning_across_zones(tmp_path):
         code, fixes = await send(http, urls["cn"], "cn", "proxy-doctor", {"type": "fixes"})
         assert fixes[0]["verified_by"] == ["az", "b"]
 
-        # other zones may consult, but cannot make a doctor diagnose its machine
-        code, r = await send(http, urls["cn"], "b", "proxy-doctor", {"type": "ask", "question": "x"})
-        assert "only diagnoses its own zone" in r["error"]
+        # other zones get advice from their question's text, but cannot make a doctor check its machine
+        code, r = await send(http, urls["cn"], "b", "proxy-doctor", {"type": "ask", "question": "407 from the proxy"})
+        assert r["mode"] == "advice" and not any(t["step"] == "diagnose" for t in r["trace"])
         # a zone cannot vouch for others when it pushes a fix
         code, r = await send(http, urls["cn"], "b", "proxy-doctor", {"type": "pd.fix", "fix": {
             "problem": "clock_skew", "summary": "s", "steps": ["sync clock"], "verified_by": ["az", "b"]}})

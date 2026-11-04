@@ -98,7 +98,7 @@ async def agent(stack, gw_url: str, name: str, impl: str, **env) -> None:
     await stack.enter_async_context(Server(host.app(), port))
 
 
-async def main(keep: bool, rounds: int) -> int:
+async def main(keep: bool, rounds: int, llm: bool = False) -> int:
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     work = Path(tempfile.mkdtemp(prefix="agentzones-demo-"))
     ok = True
@@ -126,6 +126,20 @@ async def main(keep: bool, rounds: int) -> int:
             await agent(stack, urls[z], "pd-fl-client", "agentzones.fl.client:FLClient", ZONE=z,
                         FL_JOB="proxy-student", FL_TASK="tasks.proxy_student:ProxyStudentClient",
                         PD_PROFILE=PROFILES[z], FL_MODEL_OUT=str(model))
+        if llm:  # LLM agents in az, on MODEL_URL (default: Ollama on this machine)
+            import os
+            model = {"MODEL_URL": os.environ.get("MODEL_URL", "http://127.0.0.1:11434/v1"),
+                     "MODEL_NAME": os.environ.get("MODEL_NAME", "llama3.2:3b")}
+            zone_mcp = {"name": "zone_mcp", "command": sys.executable, "args": ["-m", "agentzones.cli", "mcp", "--stdio"],
+                        "env": {"GATEWAY_URL": urls["az"], "AGENT_NAME": "assistant"}}
+            await agent(stack, urls["az"], "assistant", "agentzones.llm_agent:LLMAgent", **model,
+                        MCP_SERVERS=json.dumps([zone_mcp]), TOOLS="zone.*,zone_mcp.fl_*")
+            code_mcp = {"name": "code", "command": sys.executable, "args": ["-m", "agentzones.code_mcp"], "env": {"CODE_ROOT": str(ROOT)}}
+            await agent(stack, urls["az"], "code-assistant", "agentzones.llm_agent:LLMAgent", **model, TOOLS="code.*",
+                        MCP_SERVERS=json.dumps([code_mcp]), AGENT_CAPABILITIES="code", MAX_STEPS="10",
+                        AGENT_DESCRIPTION="Answers questions about the Agent Zones code (read-only)",
+                        SYSTEM_PROMPT="You answer questions about the code in the code folder. Use search and read_file, "
+                                      "and cite file paths and line numbers.")
         await agent(stack, urls["b"], "pd-aggregator", "agentzones.fl.aggregator:FLAggregator",
                     FL_JOB="proxy-student", FL_STRATEGY="tasks.proxy_student:ProxyStudentStrategy",
                     FL_ROUNDS=str(rounds), FL_MIN_CLIENTS="3", FL_AUTOSTART="0", FL_POLL_S="0.5", FL_MAX_ROUNDS="20",
@@ -234,8 +248,9 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--keep", action="store_true", help="leave the zones running")
     ap.add_argument("--rounds", type=int, default=5)
+    ap.add_argument("--llm", action="store_true", help="add LLM agents in az (assistant, code-assistant) on MODEL_URL")
     a = ap.parse_args()
     try:
-        sys.exit(asyncio.run(main(a.keep, a.rounds)))
+        sys.exit(asyncio.run(main(a.keep, a.rounds, a.llm)))
     except KeyboardInterrupt:
         pass

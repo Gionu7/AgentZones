@@ -82,6 +82,27 @@ services:
                      {"name": "zone_mcp", "command": "agentzone", "args": ["mcp", "--stdio"]}]'
       TOOLS: proxy.*,zone_mcp.fl_*
 
+  code-assistant:   # answers questions about the code in CODE_DIR (read-only), on the local model
+    extends: { service: agent }
+    profiles: [llm, host-llm]
+    environment:
+      AGENT_NAME: code-assistant
+      AGENT_IMPL: agentzones.llm_agent:LLMAgent
+      AGENT_DESCRIPTION: Answers questions about the code in this zone (read-only)
+      AGENT_CAPABILITIES: code
+      MODEL_URL: ${MODEL_URL:-http://ollama:11434/v1}
+      MODEL_NAME: ${MODEL_NAME:-qwen2.5:1.5b}
+      SYSTEM_PROMPT: >-
+        You answer questions about the code in the code folder. Use list_files and search to find the
+        relevant files, then read_file to read them, and cite file paths and line numbers. Say so when you
+        did not find something. Never invent code.
+      MCP_SERVERS: '[{"name": "code", "command": "python", "args": ["-m", "agentzones.code_mcp"], "env": {"CODE_ROOT": "/code"}}]'
+      TOOLS: code.*
+      LLM_REMOTE_TOOLS: ${CODE_REMOTE_TOOLS:-}   # code.* lets other zones read this code through it
+      MAX_STEPS: "10"
+    volumes:
+      - ${CODE_DIR:-..}:/code:ro
+
   # ---- local model -------------------------------------------------------------------------------
   # Agents ask for MODEL_NAME at MODEL_URL (any OpenAI-compatible server).
   #   COMPOSE_PROFILES=llm       an Ollama container in the zone (NVIDIA GPU: AGENTZONES_GPU=1)

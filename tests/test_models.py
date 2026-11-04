@@ -156,10 +156,10 @@ async def test_laptop_joins_the_hub_as_a_spoke(tmp_path):
                 d = (await http.get(hub_local + "/directory", params={"capability": "proxy-doctor"})).json()
                 return [e["zone"] for e in d] == ["laptop-alice"]
             await wait_for(joined, timeout=30)
-            # the hub can consult the laptop's doctor, which classifies but never touches the laptop for others
+            # the hub can ask the laptop's doctor, which gives advice but never checks the laptop for others
             r = (await http.post(hub_local + "/send", json={"target_zone": "laptop-alice", "target_agent": "proxy-doctor",
-                                                           "payload": {"type": "ask", "question": "x"}})).json()
-            assert "only diagnoses its own zone" in r["error"]
+                                                           "payload": {"type": "ask", "question": "pip: 407"}})).json()
+            assert r["mode"] == "advice" and not any(t["step"] == "diagnose" for t in r["trace"])
             assert gw.hub.zones()["laptop-alice"]["via_proxy"] is True and proxy.requests > 0
         finally:
             task.cancel()

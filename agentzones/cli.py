@@ -81,6 +81,8 @@ def main(argv: list[str] | None = None) -> int:
     lp.add_argument("--model-url", default="", help="OpenAI-compatible server (default http://127.0.0.1:11434/v1)")
     lp.add_argument("--no-llm", action="store_true", help="no LLM: Proxy Doctor still works")
     lp.add_argument("--fl", action="store_true", help="join federated training of Proxy Doctor's classifier")
+    lp.add_argument("--code", default="", help="folder for a code-assistant agent (read-only)")
+    lp.add_argument("--share-code", action="store_true", help="let other zones' questions read that code")
     lp.add_argument("--port", type=int, default=8080)
     lp.add_argument("--mcp-port", type=int, default=8000, help="0: no MCP server")
     lp.add_argument("--data", default="~/.agentzones")

@@ -41,6 +41,8 @@ services:
 
   assistant:
     extends: { file: ../../zone/base.yml, service: assistant }
+  code-assistant:   # CODE_DIR (default: this repository) is mounted read-only
+    extends: { file: ../../zone/base.yml, service: code-assistant }
   ollama:
     extends: { file: ../../zone/base.yml, service: ollama }
     volumes: [ollama:/root/.ollama]

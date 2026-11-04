@@ -89,7 +89,12 @@ the story: Overview, Network, Learning, Agents, Security. With
    click **Approve** and watch the lifecycle diagram move to *running*. With Docker and `COMPOSE_PROFILES=llm`,
    ask the `assistant` agent to retrain; it can only call `fl_request_start`.
 
-6. **Security.** Tokens never cross the proxy. A spoke with a wrong token is rejected and appears in red under
+6. **Ask.** On the *Ask* page, ask `code-assistant@az` how the hub decides that a spoke is offline, and open
+   *How it answered* to show the search and the file it read. Ask `proxy-doctor@az` about an SSL error with
+   *simulate: untrusted corp ca*, then ask `proxy-doctor@b` the same: it answers from the text only, through
+   the hub and b's proxy. Needs `scripts/demo.py --keep --llm` (or `COMPOSE_PROFILES=llm`) and a local model.
+
+7. **Security.** Tokens never cross the proxy. A spoke with a wrong token is rejected and appears in red under
    *Rejected requests* and *Events*. A proxy that edits a message breaks its signature
    (`pytest tests/test_zones_e2e.py -k tampering`).
 

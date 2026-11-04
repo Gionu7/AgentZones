@@ -134,15 +134,29 @@ Training the student and the small LLM is covered in [docs/DISTILLATION.md](docs
 Every gateway serves a live dashboard on its local API: **http://127.0.0.1:8080/** for the hub (b: 8081,
 cn: 8082). It needs nothing from the internet, so it also works on an offline VM.
 
-The hub's dashboard has five pages, each with a diagram of how that part works:
+The hub's dashboard has six pages, most with a diagram of how that part works:
 
 | Page | Shows |
 |---|---|
 | Overview | the zones with messages moving between them, the current FL job, messages per second, latest events |
+| Ask | chat with any agent that can chat (`chat` capability), in any zone; each answer can be opened to show how it was reached: the tools an LLM agent called and what they returned, or Proxy Doctor's confidence per problem, steps, consulted zones and fix |
 | Network | spokes (online, last poll, mailbox), how a message travels b → proxy → hub → cn, traffic per second and per route, the traffic log |
 | Learning | job controls and pending requests with Approve / Reject, the run lifecycle (current state lit), the steps of a round, global and per-client accuracy, each client's FedAvg share and update size, time per round, the audit log |
 | Agents | all agents by zone, the Proxy Doctor flow, verified fixes per zone and whether each doctor uses the federated model |
 | Security | how request signing works, what a proxy can and cannot do, rejected requests, all events |
+
+Which agents you can ask, and what they do for other zones:
+
+| Agent | From its own zone | From another zone |
+|---|---|---|
+| `assistant` (LLM) | the local model with the zone's tools (Proxy Doctor's, FL requests) | the model only; tools listed in `LLM_REMOTE_TOOLS` |
+| `code-assistant` (LLM) | reads the code in `CODE_DIR` (read-only MCP server: list, search, read) | the model only, unless `CODE_REMOTE_TOOLS=code.*` |
+| `proxy-doctor` | checks the machine (or a simulated one), consults other zones, proposes a fix | advice from the question's text and its verified fixes; no checks |
+
+`assistant` and `code-assistant` come with `COMPOSE_PROFILES=llm` (or `host-llm`); `code-assistant` is in zone az
+and reads this repository unless `CODE_DIR` says otherwise. On a laptop: `agentzone laptop --code ~/src/project`.
+`python scripts/demo.py --keep --llm` adds both to the demo, using Ollama on this machine. A chat is kept in the
+browser tab; each question sends the last turns along, so the agents themselves keep no state.
 
 The hub only records each message's type and size, never its contents. A spoke's dashboard shows its own view:
 its hub connection, the directory and the FL jobs. If `ZONE_API_TOKEN` is set, open the page as

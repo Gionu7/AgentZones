@@ -10,6 +10,8 @@ runs on its own (standalone). It runs:
 * the gateway (local API and dashboard on 127.0.0.1:8080)
 * ``proxy-doctor`` - diagnoses this machine; proposes fixes, applies nothing unless PROXY_DOCTOR_ALLOW_APPLY=1
 * ``assistant`` - LLM agent on the local model, with Proxy Doctor's tools and the FL request tools
+* ``code-assistant`` (``--code DIR``) - answers questions about the code in DIR, read-only; other zones may
+  ask it but only get its file tools with ``--share-code``
 * ``pd-fl-client`` (``--fl``) - joins federated training of Proxy Doctor's classifier
 * the zone MCP server on 127.0.0.1:8000 for Claude Desktop, an IDE or any MCP client
 
@@ -73,7 +75,7 @@ def default_zone() -> str:
 async def run(zone: str, hub_url: str = "", hub_token: str = "", hub_proxy: str = "", port: int = 8080,
               mcp_port: int = 8000, data_dir: str = "~/.agentzones", model_url: str = "http://127.0.0.1:11434/v1",
               model_name: str = "llama3.2:3b", model_source: str = "", llm: bool = True, fl: bool = False,
-              setup_model: bool = True) -> None:
+              setup_model: bool = True, code_dir: str = "", share_code: bool = False) -> None:
     data = Path(os.path.expanduser(data_dir)) / zone
     data.mkdir(parents=True, exist_ok=True)
     gw_url = f"http://127.0.0.1:{port}"
@@ -99,6 +101,16 @@ async def run(zone: str, hub_url: str = "", hub_token: str = "", hub_proxy: str 
             proxy_mcp = {"name": "proxy", "command": sys.executable, "args": ["-m", "proxy_doctor.mcp_server"]}
             await agent("assistant", "agentzones.llm_agent:LLMAgent", **model_env, TOOLS="proxy.*,zone_mcp.fl_*",
                         MCP_SERVERS=json.dumps([proxy_mcp, zone_mcp]))
+        if llm and code_dir:
+            code_mcp = {"name": "code", "command": sys.executable, "args": ["-m", "agentzones.code_mcp"],
+                        "env": {"CODE_ROOT": str(Path(os.path.expanduser(code_dir)).resolve())}}
+            await agent("code-assistant", "agentzones.llm_agent:LLMAgent", **model_env, TOOLS="code.*", MAX_STEPS="10",
+                        AGENT_CAPABILITIES="code", MCP_SERVERS=json.dumps([code_mcp]),
+                        AGENT_DESCRIPTION=f"Answers questions about {Path(code_dir).name}/ on {zone} (read-only)",
+                        LLM_REMOTE_TOOLS="code.*" if share_code else "",
+                        SYSTEM_PROMPT="You answer questions about the code in the code folder. Use list_files and "
+                                      "search to find the relevant files, then read_file to read them, and cite file "
+                                      "paths and line numbers. Say so when you did not find something. Never invent code.")
         if fl:
             await agent("pd-fl-client", "agentzones.fl.client:FLClient", FL_JOB="proxy-student",
                         FL_TASK="tasks.proxy_student:ProxyStudentClient", PD_PROFILE="dev-laptops",
@@ -138,6 +150,6 @@ def main(args: Any) -> None:
                         model_url=args.model_url or env.get("MODEL_URL", "http://127.0.0.1:11434/v1"),
                         model_name=args.model or env.get("MODEL_NAME", "llama3.2:3b"),
                         model_source=args.model_source or env.get("MODEL_SOURCE", ""),
-                        llm=not args.no_llm, fl=args.fl))
+                        llm=not args.no_llm, fl=args.fl, code_dir=args.code, share_code=args.share_code))
     except KeyboardInterrupt:
         pass

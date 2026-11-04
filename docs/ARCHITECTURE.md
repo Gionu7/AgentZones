@@ -119,6 +119,7 @@ ask (own zone only) → diagnose (MCP) → student.classify → confident and a 
   changes. The local LLM writes the explanation, but the decision does not depend on it.
 * **Verification** means the doctor re-runs the checks after applying the fix and the external (and internal)
   request now succeeds. Only verified fixes are shared.
-* **Other zones** can only consult (their observation, classified by our model, plus our verified fixes) and
-  push fixes. A pushed fix is stored as verified by the *sending* zone only, and is not applied until the local
+* **Other zones** can consult (their observation, classified by our model, plus our verified fixes), ask in
+  plain words (``ask`` from another zone gets *advice*: the error text in the question is classified, and our
+  verified or catalog fix is returned; nothing runs on this machine) and push fixes. A pushed fix is stored as verified by the *sending* zone only, and is not applied until the local
   doctor verifies it.
