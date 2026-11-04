@@ -11,3 +11,5 @@ dist/
 deploy/certs/*.crt
 models/*.gguf
 models/proxy-doctor-*/
+zones/*/.env
+.env

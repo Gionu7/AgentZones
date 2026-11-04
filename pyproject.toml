@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentzones"
-version = "0.1.0"
-description = "Peer-to-peer, self-hosted AI agent zones: local LLM + MCP tools + gossip discovery + federated learning"
+version = "0.2.0"
+description = "Self-hosted AI agent zones in a hub-and-spoke network: outbound-only spokes, MCP, local LLMs, federated learning"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -27,10 +27,7 @@ distill = ["torch", "transformers>=4.44", "peft>=0.12", "datasets>=2.20", "accel
 agentzone = "agentzones.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["agentzones*", "proxy_doctor*"]
-
-[tool.setuptools.package-data]
-agentzones = ["static/*"]
+include = ["agentzones*", "proxy_doctor*", "tasks*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

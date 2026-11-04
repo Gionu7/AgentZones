@@ -1,188 +1,143 @@
 """``agentzone`` command line.
 
-  agentzone init                       write a starter zone.yaml
-  agentzone up -c zone.yaml            run a zone
-  agentzone info|peers|tools|fixes     inspect a running zone
-  agentzone ask AGENT "question"       ask an agent (in this or, via --zone, another zone)
-  agentzone call TOOL '{"arg": 1}'     call a tool directly
-  agentzone fl status|train|aggregate|round
+Run the parts of a zone (each reads its settings from the environment)::
+
+  agentzone gateway                 ROLE=hub|spoke|standalone, ZONE, HUB_URL, HUB_TOKEN, SPOKE_TOKENS, ...
+  agentzone agent                   AGENT_NAME, AGENT_IMPL, GATEWAY_URL, ...
+  agentzone mcp [--stdio]           MCP server with list_agents / send_message
+
+Talk to a zone (through its gateway, default http://127.0.0.1:8080 or $GATEWAY_URL)::
+
+  agentzone status | directory [-c CAPABILITY]
+  agentzone send ZONE AGENT '{"type": "fl.status"}'
+  agentzone ask proxy-doctor "pip fails with 407" [--simulate proxy_auth_required]
+  agentzone fl status|start|stop [--zone b --agent mnist-aggregator]
+  agentzone token                   print a random token for SPOKE_TOKENS / HUB_TOKEN
 """
 
 from __future__ import annotations
 
-import argparse
-import json
-import logging
 import os
-import sys
-from pathlib import Path
 
-import httpx
+# Several agents often share one host; unlimited BLAS threads made FL rounds ~250x slower.
+_threads = os.environ.get("AGENT_BLAS_THREADS", "2")
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+    os.environ.setdefault(_v, _threads)
 
-STARTER = """\
-# Agent Zone config - one file per zone. ${VAR:-default} reads the environment.
-name: ${ZONE_NAME:-my-zone}
-port: ${ZONE_PORT:-7700}
-advertise_url: ${ZONE_URL:-}          # how peers reach this zone, e.g. http://10.1.2.3:7700
-tags: [laptop]
+import argparse  # noqa: E402
+import asyncio  # noqa: E402
+import json  # noqa: E402
+import logging  # noqa: E402
+import secrets  # noqa: E402
+import sys  # noqa: E402
 
-model:                                 # any OpenAI-compatible endpoint (Ollama, llama.cpp, vLLM)
-  base_url: ${MODEL_URL:-http://localhost:11434/v1}
-  model: ${MODEL_NAME:-qwen2.5:1.5b}
-
-discovery:
-  peers: []                            # seed URLs of any zones you know, e.g. [http://10.1.2.4:7700]
-
-security:
-  network_secret: ${ZONE_SECRET:-}     # same value on every zone of the network
-  api_token: ${ZONE_API_TOKEN:-}
-
-mcp_servers:
-  - name: proxy
-    command: python
-    args: [-m, proxy_doctor.mcp_server]
-    expose: [list_problems, propose_fix] # tools peers may call
-
-agents:
-  - name: proxy-doctor
-    kind: python
-    impl: proxy_doctor.agent:ProxyDoctor
-    description: Diagnoses and fixes corporate proxy and certificate problems
-  - name: assistant
-    kind: llm
-    description: General assistant with this zone's tools
-    tools: ["proxy.*"]
-
-federated:
-  enabled: true
-  task: proxy_doctor.student:ProxyStudentTask
-  data: {profile: uniform, n_samples: 400}
-"""
+import httpx  # noqa: E402
 
 
-def _base(args) -> str:
-    return (args.zone or os.environ.get("AGENTZONE_URL") or "http://127.0.0.1:7700").rstrip("/")
-
-
-def _headers() -> dict[str, str]:
-    tok = os.environ.get("ZONE_API_TOKEN")
-    return {"Authorization": f"Bearer {tok}"} if tok else {}
-
-
-def _get(args, path):
-    r = httpx.get(_base(args) + path, headers=_headers(), timeout=30)
-    r.raise_for_status()
-    return r.json()
-
-
-def _post(args, path, body=None, timeout=600):
-    r = httpx.post(_base(args) + path, json=body or {}, headers=_headers(), timeout=timeout)
-    r.raise_for_status()
-    return r.json()
+def _gw(args) -> httpx.Client:
+    token = os.environ.get("ZONE_API_TOKEN", "")
+    return httpx.Client(base_url=args.gateway.rstrip("/"), timeout=args.timeout + 10, trust_env=False,
+                        headers={"authorization": f"Bearer {token}"} if token else {})
 
 
 def _print(obj) -> None:
     print(json.dumps(obj, indent=2, default=str))
 
 
-def cmd_up(args) -> None:
-    import uvicorn
-
-    from .config import load_config
-    from .server import create_app
-
-    logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
-                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    overrides = {"name": args.name, "port": args.port, "advertise_url": args.advertise_url}
-    cfg = load_config(args.config, overrides)
-    if args.peer:
-        cfg.discovery.peers = list(dict.fromkeys(cfg.discovery.peers + args.peer))
-    if not cfg.advertise_url and cfg.host in ("127.0.0.1", "localhost"):
-        cfg.advertise_url = f"http://127.0.0.1:{cfg.port}"
-    if args.host:
-        cfg.host = args.host
-    app = create_app(cfg)
-    uvicorn.run(app, host=cfg.host, port=cfg.port, log_level="warning")
-
-
-def cmd_init(args) -> None:
-    p = Path(args.output)
-    if p.exists() and not args.force:
-        sys.exit(f"{p} exists (use --force)")
-    p.write_text(STARTER)
-    print(f"wrote {p}. Start with: agentzone up -c {p}")
-
-
-def cmd_ask(args) -> None:
-    ctx = json.loads(args.context) if args.context else {}
-    if args.simulate:
-        ctx["simulate"] = args.simulate
-    res = _post(args, f"/api/agents/{args.agent}/ask", {"question": args.question, "context": ctx or None})
-    if args.json:
-        _print(res)
-    else:
-        print(res.get("answer") or res.get("error"))
-        if res.get("trace"):
-            print("\n-- trace --")
-            for step in res["trace"]:
-                print(" ", json.dumps(step, default=str)[:300])
-
-
-def cmd_call(args) -> None:
-    _print(_post(args, "/api/tools/call", {"tool": args.tool, "arguments": json.loads(args.arguments or "{}")}))
-
-
-def cmd_fl(args) -> None:
-    _print(_get(args, "/api/fl") if args.phase == "status" else _post(args, f"/api/fl/{args.phase}"))
-
-
-def main(argv: list[str] | None = None) -> None:
-    ap = argparse.ArgumentParser(prog="agentzone", description="Peer-to-peer self-hosted AI agent zones")
-    ap.add_argument("--zone", help="zone URL for client commands (default $AGENTZONE_URL or http://127.0.0.1:7700)")
-    sub = ap.add_subparsers(dest="cmd", required=True)
-
-    up = sub.add_parser("up", help="run a zone")
-    up.add_argument("-c", "--config", default=os.environ.get("ZONE_CONFIG", "zone.yaml"))
-    up.add_argument("--name")
-    up.add_argument("--host")
-    up.add_argument("--port", type=int)
-    up.add_argument("--advertise-url")
-    up.add_argument("--peer", action="append", help="seed peer URL (repeatable)")
-    up.set_defaults(fn=cmd_up)
-
-    ini = sub.add_parser("init", help="write a starter zone.yaml")
-    ini.add_argument("-o", "--output", default="zone.yaml")
-    ini.add_argument("--force", action="store_true")
-    ini.set_defaults(fn=cmd_init)
-
-    for name, path in (("info", "/api/info"), ("peers", "/api/peers"), ("tools", "/api/tools"),
-                       ("fixes", "/api/fixes"), ("agents", "/api/agents"), ("events", "/api/events")):
-        p = sub.add_parser(name, help=f"GET {path}")
-        p.set_defaults(fn=lambda a, path=path: _print(_get(a, path)))
-
-    ask = sub.add_parser("ask", help="ask an agent")
-    ask.add_argument("agent")
-    ask.add_argument("question")
-    ask.add_argument("--context", help="JSON object")
-    ask.add_argument("--simulate", help="proxy-doctor: simulate a failure class")
-    ask.add_argument("--json", action="store_true")
-    ask.set_defaults(fn=cmd_ask)
-
-    call = sub.add_parser("call", help="call a tool of the zone")
-    call.add_argument("tool")
-    call.add_argument("arguments", nargs="?")
-    call.set_defaults(fn=cmd_call)
-
-    fl = sub.add_parser("fl", help="federated learning")
-    fl.add_argument("phase", choices=["status", "train", "aggregate", "round"])
-    fl.set_defaults(fn=cmd_fl)
-
-    args = ap.parse_args(argv)
+def _send(args, zone: str, agent: str, payload) -> int:
+    r = _gw(args).post("/send", json={"from_agent": "cli", "target_zone": zone, "target_agent": agent,
+                                      "payload": payload, "timeout": args.timeout})
     try:
-        args.fn(args)
-    except httpx.HTTPError as exc:
-        sys.exit(f"error: {exc}")
+        _print(r.json())
+    except ValueError:
+        print(r.text)
+    return 0 if r.status_code < 400 else 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(prog="agentzone", description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    p.add_argument("--gateway", default=os.environ.get("GATEWAY_URL", "http://127.0.0.1:8080"))
+    p.add_argument("--timeout", type=float, default=120)
+    p.add_argument("-v", "--verbose", action="store_true")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    sub.add_parser("gateway", help="run the zone gateway")
+    sub.add_parser("agent", help="run one agent")
+    m = sub.add_parser("mcp", help="run the zone MCP server")
+    m.add_argument("--stdio", action="store_true")
+    m.add_argument("--host", default=os.environ.get("MCP_HOST", "0.0.0.0"))
+    m.add_argument("--port", type=int, default=int(os.environ.get("MCP_PORT", "8000")))
+
+    sub.add_parser("status")
+    d = sub.add_parser("directory")
+    d.add_argument("-c", "--capability")
+    s = sub.add_parser("send")
+    s.add_argument("zone")
+    s.add_argument("agent")
+    s.add_argument("payload", help="JSON")
+    a = sub.add_parser("ask")
+    a.add_argument("agent")
+    a.add_argument("question")
+    a.add_argument("--zone", default="")
+    a.add_argument("--simulate", help="Proxy Doctor: simulate a scenario instead of checking this machine")
+    a.add_argument("--target")
+    f = sub.add_parser("fl")
+    f.add_argument("action", choices=["status", "start", "stop"])
+    f.add_argument("--zone", default="")
+    f.add_argument("--agent", default="")
+    f.add_argument("--job", default="", help="find the aggregator of this job in the directory")
+    f.add_argument("--rounds", type=int)
+    sub.add_parser("token")
+
+    args = p.parse_args(argv)
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    if args.cmd == "gateway":
+        from .gateway import GatewaySettings, serve
+        asyncio.run(serve(GatewaySettings.from_env()))
+        return 0
+    if args.cmd == "agent":
+        from .agent import AgentHost
+        asyncio.run(AgentHost().serve())
+        return 0
+    if args.cmd == "mcp":
+        from .mcp_gateway import http_app, main_from_env
+        srv = main_from_env()
+        if args.stdio:
+            srv.run()
+        else:
+            import uvicorn
+            uvicorn.run(http_app(srv), host=args.host, port=args.port, log_level="warning")
+        return 0
+    if args.cmd == "token":
+        print(secrets.token_urlsafe(32))
+        return 0
+    if args.cmd == "status":
+        _print(_gw(args).get("/status").json())
+        return 0
+    if args.cmd == "directory":
+        _print(_gw(args).get("/directory", params={"capability": args.capability} if args.capability else None).json())
+        return 0
+    if args.cmd == "send":
+        return _send(args, args.zone, args.agent, json.loads(args.payload))
+    if args.cmd == "ask":
+        ctx = {k: v for k, v in (("simulate", args.simulate), ("target", args.target)) if v}
+        return _send(args, args.zone, args.agent, {"type": "ask", "question": args.question, "context": ctx})
+    if args.cmd == "fl":
+        zone, agent = args.zone, args.agent
+        if not agent:
+            cap = f"fl-aggregator:{args.job}" if args.job else "fl-aggregator:*"
+            found = _gw(args).get("/directory", params={"capability": cap}).json()
+            if not found:
+                print(f"no aggregator with capability {cap} in the directory", file=sys.stderr)
+                return 1
+            zone, agent = found[0]["zone"], found[0]["agent"]
+        payload = {"type": f"fl.{args.action}", **({"rounds": args.rounds} if args.rounds else {})}
+        return _send(args, zone, agent, payload)
+    return 2
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

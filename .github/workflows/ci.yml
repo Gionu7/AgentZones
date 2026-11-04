@@ -10,3 +10,7 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: pytest -q
       - run: python scripts/demo.py
+      - name: zone files are valid
+        run: |
+          docker network create agent-mesh
+          for z in az cn b; do COMPOSE_PROFILES=sim scripts/zone.sh "$z" config -q; done

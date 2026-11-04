@@ -1,0 +1,44 @@
+# Zone cn: a SPOKE with outbound connections only. Nothing connects into it.
+#   scripts/zone.sh cn
+# On a real host: export HUB_URL=http://<az-host>:9090 HUB_TOKEN=<ZONE_CN_TOKEN>
+name: cn
+
+services:
+  gateway:
+    extends: { file: ../../zone/base.yml, service: gateway }
+    environment:
+      ZONE: cn
+      HUB_TOKEN: ${HUB_TOKEN:-dev-token-cn}
+    ports: ["127.0.0.1:${ZONE_PORT:-8082}:8080"]
+    networks: [default, agent-mesh]   # agent-mesh only to reach the hub on one host; no other effect
+
+  mcp:
+    extends: { file: ../../zone/base.yml, service: mcp }
+    ports: ["127.0.0.1:${MCP_PORT:-8002}:8000"]
+
+  mnist-client:
+    extends: { file: ../../zone/base.yml, service: fl-client }
+    environment:
+      AGENT_NAME: mnist-client
+      FL_JOB: mnist
+      FL_TASK: tasks.mnist:MnistClient
+      FL_CLIENT_INDEX: "1"
+      FL_NUM_CLIENTS: "3"
+      LABELS: ${CN_LABELS:-}
+    volumes: [mnist-data:/data]
+
+  proxy-doctor:
+    extends: { file: ../../zone/base.yml, service: proxy-doctor }
+    environment: { PD_PROFILE: k8s-cluster }
+    volumes: [pd-data:/data]
+
+  assistant:
+    extends: { file: ../../zone/base.yml, service: assistant }
+  ollama:
+    extends: { file: ../../zone/base.yml, service: ollama }
+    volumes: [ollama:/root/.ollama]
+
+networks:
+  agent-mesh: { external: true }
+
+volumes: { mnist-data: {}, pd-data: {}, ollama: {} }

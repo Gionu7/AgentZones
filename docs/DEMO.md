@@ -2,7 +2,7 @@
 
 ## Setup
 
-Install the package, then start the demo and leave the zones running:
+Without Docker (one process, about 10 seconds):
 
 ```bash
 pip install -e .
@@ -12,58 +12,85 @@ pip install -e .
 python scripts/demo.py --keep
 ```
 
-Open three browser tabs: http://127.0.0.1:7701, :7702 and :7703. These are the zone-a, zone-b and zone-c dashboards.
-
-Optional, for LLM-written explanations:
+With Docker, on one host and with b's network constraints enforced:
 
 ```bash
-ollama pull qwen2.5:1.5b
+scripts/zone.sh az
 ```
 
 ```bash
-MODEL_PROVIDER=openai python scripts/demo.py --keep
-```
-
-Optional, the same three zones in Docker:
-
-```bash
-docker compose -f deploy/docker-compose.demo.yml up -d --build
+scripts/zone.sh cn
 ```
 
 ```bash
-python scripts/demo.py --no-launch --zones http://localhost:7701 http://localhost:7702 http://localhost:7703
+COMPOSE_PROFILES=sim scripts/zone.sh b
 ```
 
-Optional, across real machines. Run one zone per laptop or VM with `ZONE_SEED` set to a neighbour's URL and the
-same `ZONE_SECRET` everywhere (see `.env.example`).
+Add `COMPOSE_PROFILES=llm` (for example `COMPOSE_PROFILES=sim,llm` for b) to get Ollama and LLM-written
+explanations.
 
 ## Story
 
-1. **One command per zone, no registry.** zone-c only knows zone-b, and zone-b only knows zone-a. Show the
-   *Peer zones* panel: within seconds everyone knows everyone, through gossip.
-2. **A local fix.** zone-b is a build server and hits `407 Proxy Authentication Required`. Its own model is
-   confident. It applies the fix, re-runs the checks, marks the fix **verified** and shares it.
-   The *Verified fixes* panel fills in on zone-a and zone-c.
-3. **Asking for help.** zone-a is a developer laptop and hits the same 407, which it has hardly ever seen.
-   Its local model is unsure, so it asks its peers and sends only the diagnostic observation. zone-b is
-   confident and has a verified fix. zone-a applies it, verifies it locally and adds itself to `verified_by`.
-4. **Federated learning.** Click *Full round* on each dashboard, or let the script do it. The chart shows
-   benchmark accuracy going from about 45% (each site only knows its own problems) to about 95%. No incident
-   data left any zone.
-5. **Real machine.** Pick *real machine* in the dashboard and ask about `pypi.org`. The doctor runs real
-   checks: proxy env, TCP to the proxy, HTTPS with and without verification, certificate issuer, CA bundles
-   and clock skew. A nice live trick is to unset `REQUESTS_CA_BUNDLE` behind a TLS-intercepting proxy. The
-   doctor then reports `tool_ca_bundle` and gives the exact `pip config` and `git config` lines.
+1. **Hub and spoke.** Show `curl -s localhost:8080/status`: the hub sees spokes b and cn polling, and neither
+   accepts connections. In b, show that the gateway can't reach the hub or the internet directly:
+
+   ```bash
+   docker exec zone-b-gateway-1 python -c "import urllib.request as u; u.urlopen('http://hub:9090/health', timeout=3)"
+   ```
+
+   Then show the squid log, where all of b's hub traffic appears:
+
+   ```bash
+   docker exec zone-b-proxy-1 tail /var/log/squid/access.log
+   ```
+
+2. **Federated learning across three networks.** The aggregator lives in b, behind the proxy. Clients in az, b
+   and cn each hold a third of MNIST. Follow the rounds (about 91% after one round, about 95% after five):
+
+   ```bash
+   scripts/zone.sh b logs -f mnist-aggregator
+   ```
+
+   Start a new run from cn, a zone that no one can connect to:
+
+   ```bash
+   curl -s localhost:8082/send -H 'content-type: application/json' \
+     -d '{"target_zone":"b","target_agent":"mnist-aggregator","payload":{"type":"fl.start","rounds":5}}'
+   ```
+
+3. **Non-IID data.** Restart cn's client with only some digits, and watch rounds still converge:
+
+   ```bash
+   CN_LABELS=0,1,2,3 scripts/zone.sh cn up -d mnist-client
+   ```
+
+4. **Proxy Doctor.** b hits `407 Proxy Authentication Required`, fixes it and sends the verified fix out. Then
+   az, which has hardly ever seen that problem, consults the other zones and reuses b's fix:
+
+   ```bash
+   python -m agentzones.cli --gateway http://127.0.0.1:8081 ask proxy-doctor "pip: 407" --simulate proxy_auth_required
+   ```
+
+   ```bash
+   python -m agentzones.cli --gateway http://127.0.0.1:8080 ask proxy-doctor "pip: 407" --simulate proxy_auth_required
+   ```
+
+   The fix is only applied on a simulated machine if the zone runs with `PD_AUTO_APPLY=1`. `scripts/demo.py`
+   does that; the Docker zones only propose fixes by default.
+
+5. **Security.** Tokens never cross the proxy. A spoke with a wrong token is rejected, and a proxy that edits a
+   message breaks its signature (`pytest tests/test_zones_e2e.py -k tampering`).
 
 ## Talking points
 
-* Costs nothing per token, uses idle machines, and the data stays on site. The model runs on a laptop CPU
-  (student) or a small local LLM.
-* Standard parts: MCP for tools, an OpenAI-compatible API for models, HTTP and JSON between zones. Any MCP
-  server, such as a future Azure ML one, plugs straight in.
-* Safe by default: signed peer calls, tools private unless exposed, dry-run unless allowed, verify before share.
+* Fits real networks: one public endpoint, and every other site makes outbound calls only, through its proxy if
+  it has to.
+* Standard parts: MCP for tools (and an MCP server per zone for Claude Desktop or an IDE), an
+  OpenAI-compatible API for models, HTTP and JSON between zones, one Docker image.
+* FL is generic: two small plugin classes per model, parameters as numpy arrays, any framework.
+* Safe by default: per-zone tokens that never travel, signed answers, localhost-only ports, verify before share.
 
 ## Simulated failure classes
 
-`--simulate` / dashboard: `untrusted_corp_ca`, `tool_ca_bundle`, `proxy_auth_required`, `missing_proxy_env`,
+`--simulate`: `untrusted_corp_ca`, `tool_ca_bundle`, `proxy_auth_required`, `missing_proxy_env`,
 `proxy_unreachable`, `no_proxy_internal`, `dns_failure`, `clock_skew`, `healthy`.

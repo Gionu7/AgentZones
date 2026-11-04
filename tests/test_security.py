@@ -1,35 +1,53 @@
 import time
 
-from agentzones.security import ip_allowed, sign_headers, verify
+from agentzones.security import RequestVerifier, parse_tokens, sign_request, sign_response, verify_response
 
 
 def lower(h):
     return {k.lower(): v for k, v in h.items()}
 
 
-def test_sign_and_verify_roundtrip():
-    h = sign_headers("s3cret", "zone-a", "POST", "/p2p/ask", b'{"q":1}')
-    assert verify("s3cret", "POST", "/p2p/ask", b'{"q":1}', lower(h)) is None
+def test_roundtrip_and_zone_binding():
+    v = RequestVerifier({"b": "tok-b", "cn": "tok-cn"})
+    h = lower(sign_request("tok-b", "b", "POST", "/hub/send", b'{"x":1}'))
+    assert v.verify("POST", "/hub/send", b'{"x":1}', h) == ("b", "")
+    # same request claiming to be cn: cn's token does not match
+    h2 = lower(sign_request("tok-b", "b", "POST", "/hub/send", b"{}"))
+    h2["x-az-zone"] = "cn"
+    assert v.verify("POST", "/hub/send", b"{}", h2) == (None, "bad signature")
 
 
-def test_tampered_body_or_wrong_secret_rejected():
-    h = lower(sign_headers("s3cret", "zone-a", "POST", "/p2p/ask", b'{"q":1}'))
-    assert verify("s3cret", "POST", "/p2p/ask", b'{"q":2}', h) == "bad signature"
-    assert verify("other", "POST", "/p2p/ask", b'{"q":1}', h) == "bad signature"
-    assert verify("s3cret", "POST", "/p2p/ask", b"", {}) == "missing signature"
+def test_tampering_unknown_zone_and_missing_headers():
+    v = RequestVerifier({"b": "tok-b"})
+    h = lower(sign_request("tok-b", "b", "POST", "/hub/send", b'{"x":1}'))
+    assert v.verify("POST", "/hub/send", b'{"x":2}', h)[1] == "bad signature"
+    assert v.verify("POST", "/hub/ack", b'{"x":1}', h)[1] == "bad signature"
+    assert v.verify("GET", "/hub/poll", b"", {"x-az-zone": "zz"})[1] == "unknown zone"
+    assert v.verify("GET", "/hub/poll", b"", {"x-az-zone": "b"})[1] == "missing signature"
 
 
-def test_replay_outside_skew_rejected(monkeypatch):
-    h = lower(sign_headers("k", "z", "GET", "/p2p/fl/weights", b""))
+def test_replay_rejected():
+    v = RequestVerifier({"b": "tok-b"})
+    h = lower(sign_request("tok-b", "b", "GET", "/hub/poll?wait=20", b""))
+    assert v.verify("GET", "/hub/poll?wait=20", b"", h)[0] == "b"
+    assert v.verify("GET", "/hub/poll?wait=20", b"", h)[1] == "replayed request"
+
+
+def test_old_request_rejected(monkeypatch):
+    v = RequestVerifier({"b": "k"})
+    h = lower(sign_request("k", "b", "GET", "/hub/poll", b""))
     monkeypatch.setattr(time, "time", lambda: int(h["x-az-timestamp"]) + 1000)
-    assert "skew" in verify("k", "GET", "/p2p/fl/weights", b"", h, max_skew_s=120)
+    assert "skew" in v.verify("GET", "/hub/poll", b"", h)[1]
 
 
-def test_no_secret_means_open():
-    assert verify("", "GET", "/x", b"", {}) is None
+def test_response_bound_to_request():
+    sig = sign_response("k", "nonce-1", b"[]")
+    assert verify_response("k", "nonce-1", b"[]", sig)
+    assert not verify_response("k", "nonce-2", b"[]", sig)      # replayed answer to another request
+    assert not verify_response("k", "nonce-1", b"[{}]", sig)    # modified answer
+    assert not verify_response("other", "nonce-1", b"[]", sig)
+    assert not verify_response("k", "nonce-1", b"[]", None)
 
 
-def test_cidr_allowlist():
-    assert ip_allowed("10.1.2.3", ["10.0.0.0/8"])
-    assert not ip_allowed("192.168.1.1", ["10.0.0.0/8"])
-    assert ip_allowed("1.2.3.4", [])
+def test_parse_tokens():
+    assert parse_tokens(" b=1 , cn=2,bad,=x,") == {"b": "1", "cn": "2"}

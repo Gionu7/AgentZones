@@ -1,0 +1,52 @@
+# Zone b: a SPOKE whose only way out is an HTTP proxy. It also runs the MNIST aggregator.
+#   scripts/zone.sh b                          real host: export HUB_URL, HUB_PROXY, HUB_TOKEN first
+#   COMPOSE_PROFILES=sim scripts/zone.sh b     one host: adds a squid proxy as b's only way out (sim.yml)
+name: b
+
+services:
+  gateway:
+    extends: { file: ../../zone/base.yml, service: gateway }
+    environment:
+      ZONE: b
+      HUB_TOKEN: ${HUB_TOKEN:-dev-token-b}
+      HUB_PROXY: ${HUB_PROXY:-}
+    ports: ["127.0.0.1:${ZONE_PORT:-8081}:8080"]
+
+  mcp:
+    extends: { file: ../../zone/base.yml, service: mcp }
+    ports: ["127.0.0.1:${MCP_PORT:-8001}:8000"]
+
+  mnist-client:
+    extends: { file: ../../zone/base.yml, service: fl-client }
+    environment:
+      AGENT_NAME: mnist-client
+      FL_JOB: mnist
+      FL_TASK: tasks.mnist:MnistClient
+      FL_CLIENT_INDEX: "2"
+      FL_NUM_CLIENTS: "3"
+      LABELS: ${B_LABELS:-}
+    volumes: [mnist-data:/data]
+
+  mnist-aggregator:
+    extends: { file: ../../zone/base.yml, service: fl-aggregator }
+    environment:
+      AGENT_NAME: mnist-aggregator
+      FL_JOB: mnist
+      FL_STRATEGY: tasks.mnist:MnistStrategy
+      FL_ROUNDS: ${FL_ROUNDS:-10}
+      FL_MIN_CLIENTS: ${FL_MIN_CLIENTS:-3}
+      FL_MIN_FIT_CLIENTS: ${FL_MIN_FIT_CLIENTS:-2}
+    volumes: [models:/models, aggregator-data:/data]
+
+  proxy-doctor:
+    extends: { file: ../../zone/base.yml, service: proxy-doctor }
+    environment: { PD_PROFILE: build-servers }
+    volumes: [pd-data:/data]
+
+  assistant:
+    extends: { file: ../../zone/base.yml, service: assistant }
+  ollama:
+    extends: { file: ../../zone/base.yml, service: ollama }
+    volumes: [ollama:/root/.ollama]
+
+volumes: { mnist-data: {}, aggregator-data: {}, models: {}, pd-data: {}, ollama: {} }
