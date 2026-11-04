@@ -1,6 +1,5 @@
 .git
-.zone-data
-.zone-*.log
+**/.env
 **/__pycache__
 .pytest_cache
 data

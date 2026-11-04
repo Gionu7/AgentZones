@@ -79,7 +79,7 @@ def accuracy(model: Student, X: np.ndarray, labels: list[str]) -> float:
 class ProxyStudentTask:
     """Federated task: each zone trains the student on its own (skewed) cases.
 
-    data options (zone.yaml ``federated.data``):
+    options (tasks/proxy_student.py passes PD_PROFILE, PD_SAMPLES and PD_CASES_PATH):
       profile:   site profile in proxy_doctor.synth.PROFILES (dev-laptops, ...)
       n_samples: number of local cases (synthetic stand-in for local incident logs)
       seed:      RNG seed for the local data

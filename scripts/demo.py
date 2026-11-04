@@ -1,161 +1,199 @@
 #!/usr/bin/env python3
-"""End-to-end hackathon demo on one machine: three zones, no central registry.
+"""Three agent zones on one machine, no Docker needed:
 
-    python scripts/demo.py            # starts zone-a/b/c locally and runs the story
-    python scripts/demo.py --no-launch --zones http://h1:7700 http://h2:7700 http://h3:7700
+    python scripts/demo.py           run the story and exit
+    python scripts/demo.py --keep    leave the zones running afterwards
+
+Topology (the same as zones/*/zone.yml):
+    az  HUB      the only zone that accepts connections
+    cn  spoke    outbound only
+    b   spoke    outbound only, and only through an HTTP proxy
 
 Story
-  1. Discovery   zone-c only knows zone-b, zone-b only knows zone-a; gossip connects all.
-  2. Local fix   zone-b (build servers) hits "407 proxy auth", fixes it, verifies, shares the fix.
-  3. Ask peers   zone-a (dev laptops) hits the same problem, which it has rarely seen; it is
-                 unsure, asks its peers, applies zone-b's verified fix and confirms it.
-  4. Federated   four FedAvg rounds: every zone's model improves on problems it never saw
-                 locally, without exchanging any raw data.
-  5. After FL    zone-a now diagnoses a Kubernetes-style NO_PROXY problem on its own.
+  1. Hub and spoke   b and cn register with the hub; b talks to cn through the hub, via its proxy.
+  2. Local fix       b hits "407 Proxy Authentication Required", fixes it, verifies, sends the fix out.
+  3. Consult         az hits the same problem, is unsure, consults the other zones and reuses b's fix.
+  4. Federated       cn starts a run of the aggregator in b; clients in all three zones train the
+                     Proxy Doctor model on their own data; no data leaves a zone.
+  5. Security        a spoke with the wrong token is turned away.
 """
 
 from __future__ import annotations
 
 import argparse
-import os
-import subprocess
+import asyncio
+import contextlib
+import logging
 import sys
-import time
+import tempfile
 from pathlib import Path
 
 import httpx
+import uvicorn
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from agentzones.agent import AgentHost  # noqa: E402
+from agentzones.devproxy import ForwardProxy, free_port  # noqa: E402
+from agentzones.gateway import Gateway, GatewaySettings, HubClient, hub_app, local_app  # noqa: E402
+
 B, DIM, G, R, Y, X = "\033[1m", "\033[2m", "\033[32m", "\033[31m", "\033[33m", "\033[0m"
+TOKENS = {"b": "demo-token-b-4f1c2a", "cn": "demo-token-cn-9e7d3b"}
+PROFILES = {"az": "dev-laptops", "b": "build-servers", "cn": "k8s-cluster"}
 
 
 def h(title: str) -> None:
     print(f"\n{B}=== {title} ==={X}")
 
 
-def get(url, path):
-    return httpx.get(url + path, timeout=30).json()
+class Server:
+    def __init__(self, app, port: int):
+        self.port = port
+        self.server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+
+    async def __aenter__(self):
+        self.task = asyncio.create_task(self.server.serve())
+        while not self.server.started:
+            await asyncio.sleep(0.02)
+        return self
+
+    async def __aexit__(self, *exc):
+        self.server.should_exit = True
+        await self.task
 
 
-def post(url, path, body=None, timeout=300):
-    return httpx.post(url + path, json=body or {}, timeout=timeout).json()
+async def gateway(stack, **kw) -> tuple[Gateway, str, str | None]:
+    s = GatewaySettings(host="127.0.0.1", port=free_port(), hub_port=free_port(), poll_wait_s=10,
+                        register_interval_s=2, **kw)
+    gw = Gateway(s)
+    await stack.enter_async_context(Server(local_app(gw), s.port))
+    hub = None
+    if gw.hub:
+        await stack.enter_async_context(Server(hub_app(gw), s.hub_port))
+        hub = f"http://127.0.0.1:{s.hub_port}"
+    return gw, f"http://127.0.0.1:{s.port}", hub
 
 
-def ask(url, scenario, question):
-    r = post(url, "/api/agents/proxy-doctor/ask", {"question": question, "context": {"simulate": scenario}})
-    d = r["diagnosis"]
-    loc = d["local"]
-    print(f"  local model : {loc['problem']} ({loc['confidence']:.0%})")
-    for p in d.get("peers", []):
-        print(f"  peer {p['zone']:<7}: {p['problem']} ({p['confidence']:.0%}), {p['verified_fixes']} verified fix(es)")
-    ok = G if d["problem"] == scenario else R
-    print(f"  decision    : {ok}{d['problem']}{X} ({d['confidence']:.0%})  [truth: {scenario}]")
-    if r.get("fix"):
-        print(f"  fix         : {r['fix']['summary']}  {DIM}({r['fix']['source']}){X}")
-        print(f"  verified    : {G + 'yes' if r.get('verified') else R + 'no'}{X}"
-              + (f", shared with {', '.join(r.get('shared_with', []))}" if r.get("shared_with") else ""))
-    return r
+async def agent(stack, gw_url: str, name: str, impl: str, **env) -> None:
+    port = free_port()
+    host = AgentHost({"AGENT_NAME": name, "AGENT_IMPL": impl, "AGENT_PORT": str(port),
+                      "AGENT_URL": f"http://127.0.0.1:{port}", "GATEWAY_URL": gw_url, "REGISTER_INTERVAL_S": "2",
+                      **env})
+    await stack.enter_async_context(Server(host.app(), port))
 
 
-def accs(urls):
-    out = {}
-    for u in urls:
-        m = get(u, "/api/fl")["metrics"]
-        out[get(u, "/api/info")["name"]] = m
-    return out
+async def main(keep: bool, rounds: int) -> int:
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
+    work = Path(tempfile.mkdtemp(prefix="agentzones-demo-"))
+    ok = True
+    async with contextlib.AsyncExitStack() as stack, httpx.AsyncClient(timeout=120) as http:
+        async def send(gw_url, zone, name, payload, timeout=60):
+            r = await http.post(gw_url + "/send", json={"target_zone": zone, "target_agent": name,
+                                                       "payload": payload, "timeout": timeout})
+            return r.json()
 
+        proxy = await stack.enter_async_context(ForwardProxy())
+        gws, urls = {}, {}
+        gws["az"], urls["az"], hub_url = await gateway(stack, zone="az", role="hub", spoke_tokens=TOKENS)
+        gws["cn"], urls["cn"], _ = await gateway(stack, zone="cn", role="spoke", hub_url=hub_url,
+                                                 hub_token=TOKENS["cn"])
+        gws["b"], urls["b"], _ = await gateway(stack, zone="b", role="spoke", hub_url=hub_url, hub_token=TOKENS["b"],
+                                               hub_proxy=proxy.url)
+        for z in ("az", "cn", "b"):
+            model = work / z / "proxy-student.npz"
+            await agent(stack, urls[z], "echo", "agentzones.agent:EchoAgent")
+            await agent(stack, urls[z], "proxy-doctor", "proxy_doctor.agent:ProxyDoctor",
+                        DATA_DIR=str(work / z), PD_AUTO_APPLY="1", PD_EXPLAIN_WITH_LLM="0", MODEL_PROVIDER="none",
+                        PD_PROFILE=PROFILES[z], PD_MODEL_PATH=str(model))
+            await agent(stack, urls[z], "pd-fl-client", "agentzones.fl.client:FLClient", ZONE=z,
+                        FL_JOB="proxy-student", FL_TASK="tasks.proxy_student:ProxyStudentClient",
+                        PD_PROFILE=PROFILES[z], FL_MODEL_OUT=str(model))
+        await agent(stack, urls["b"], "pd-aggregator", "agentzones.fl.aggregator:FLAggregator",
+                    FL_JOB="proxy-student", FL_STRATEGY="tasks.proxy_student:ProxyStudentStrategy",
+                    FL_ROUNDS=str(rounds), FL_MIN_CLIENTS="3", FL_AUTOSTART="0", FL_POLL_S="0.5",
+                    FL_MODEL_DIR=str(work / "b" / "models"))
 
-def show_acc(urls, label):
-    a = accs(urls)
-    cells = "  ".join(f"{n}: local {m['local_acc']:.0%} / benchmark {B}{m['global_acc']:.0%}{X}" for n, m in a.items())
-    print(f"  {label:<14} {cells}")
-
-
-def wait_health(urls, timeout=60):
-    t0 = time.time()
-    for u in urls:
-        while True:
-            try:
-                if httpx.get(u + "/health", timeout=2).status_code == 200:
-                    break
-            except httpx.HTTPError:
-                pass
-            if time.time() - t0 > timeout:
-                sys.exit(f"zone {u} did not start")
-            time.sleep(0.5)
-
-
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--no-launch", action="store_true")
-    ap.add_argument("--zones", nargs=3, default=["http://127.0.0.1:7701", "http://127.0.0.1:7702",
-                                                 "http://127.0.0.1:7703"])
-    ap.add_argument("--keep", action="store_true", help="leave zones running after the demo")
-    ap.add_argument("--fl-rounds", type=int, default=4)
-    args = ap.parse_args()
-    a, b, c = args.zones
-    procs = []
-    if not args.no_launch:
-        data = ROOT / ".zone-data"
-        if data.exists():
-            import shutil
-            shutil.rmtree(data)
-        env = {**os.environ, "PYTHONPATH": str(ROOT), "LOG_LEVEL": os.environ.get("LOG_LEVEL", "WARNING")}
-        env.setdefault("MODEL_PROVIDER", "none")  # set MODEL_PROVIDER=openai to use Ollama for explanations
-        for z in "abc":
-            log = open(ROOT / f".zone-{z}.log", "w")
-            procs.append(subprocess.Popen([sys.executable, "-m", "agentzones.cli", "up", "-c",
-                                           f"examples/demo/zone-{z}.yaml"], cwd=ROOT, env=env,
-                                          stdout=log, stderr=subprocess.STDOUT))
-        print(f"{DIM}started 3 zones, logs in .zone-[abc].log{X}")
-    try:
-        wait_health(args.zones)
-
-        h("1. Discovery by gossip (no registry)")
-        print(f"  seeds: zone-c -> zone-b -> zone-a")
-        t0 = time.time()
-        while time.time() - t0 < 40:
-            views = {get(u, "/api/info")["name"]: sorted(p["name"] for p in get(u, "/api/peers")) for u in args.zones}
-            if all(len(v) == 2 for v in views.values()):
+        h("1. Hub and spoke")
+        for _ in range(100):
+            d = (await http.get(urls["b"] + "/directory")).json()
+            if len({e["zone"] for e in d}) == 3 and len(d) >= 10:
                 break
-            time.sleep(1)
-        for n, v in views.items():
-            print(f"  {n} knows {v}")
-        print(f"  {DIM}fully connected after {time.time() - t0:.1f}s{X}")
-        show_acc(args.zones, "local-only")
+            await asyncio.sleep(0.2)
+        for z in ("az", "cn", "b"):
+            names = sorted(e["agent"] for e in d if e["zone"] == z)
+            role = {"az": "hub", "cn": "spoke", "b": "spoke via proxy"}[z]
+            print(f"  {B}{z:<3}{X} {role:<16} {', '.join(names)}  {DIM}(local API {urls[z]}){X}")
+        r = await send(urls["b"], "cn", "echo", {"hello": "from b"})
+        print(f"  b -> hub -> cn -> hub -> b: {G}{r['echo']}{X} answered by zone {r['zone']}")
+        print(f"  requests through b's proxy so far: {proxy.requests}; connections into b or cn: {G}none{X}")
 
-        h("2. zone-b (build servers): 407 from proxy")
-        ask(b, "proxy_auth_required", "az login fails: Tunnel connection failed: 407 Proxy Authentication Required")
+        h("2. b fixes a 407 locally and sends the verified fix to the other zones")
+        r = await send(urls["b"], "b", "proxy-doctor", {"type": "ask", "question": "407 Proxy Authentication Required",
+                                                         "context": {"simulate": "proxy_auth_required"}})
+        d = r["diagnosis"]
+        print(f"  diagnosis {d['problem']} ({d['confidence']:.0%}), verified={r['verified']}, "
+              f"sent to {', '.join(r.get('shared_with') or []) or '-'}")
+        ok &= bool(r["verified"])
 
-        h("3. zone-a (dev laptops): same problem, rarely seen there -> asks peers")
-        ask(a, "proxy_auth_required", "pip install fails with 407 Proxy Authentication Required")
-        fx = get(c, "/api/fixes")
-        print(f"  zone-c now holds {len(fx)} fix(es): " +
-              "; ".join(f"{f['summary']} [verified by {', '.join(f['verified_by'])}]" for f in fx))
+        h("3. az is unsure about the same problem and consults the other zones")
+        r = await send(urls["az"], "az", "proxy-doctor", {"type": "ask", "question": "pip: 407 Proxy Authentication Required",
+                                                           "context": {"simulate": "proxy_auth_required"}})
+        d = r["diagnosis"]
+        print(f"  own model: {d['local']['problem']} ({d['local']['confidence']:.0%})")
+        for p in d["peers"]:
+            print(f"  zone {p['zone']:<3} says {p['problem']} ({p['confidence']:.0%}), verified fixes: {p['verified_fixes']}")
+        print(f"  result {B}{d['problem']}{X}, fix {r['fix']['source']}, verified on az: {r['verified']}")
+        ok &= d["problem"] == "proxy_auth_required" and bool(r["verified"])
 
-        h(f"4. Federated learning: {args.fl_rounds} FedAvg rounds, no raw data leaves a zone")
-        show_acc(args.zones, "before")
-        for r in range(1, args.fl_rounds + 1):
-            for u in args.zones:  # phase 1: everyone trains locally
-                post(u, "/api/fl/train")
-            for u in args.zones:  # phase 2: everyone averages the peers' trained snapshots
-                post(u, "/api/fl/aggregate")
-            show_acc(args.zones, f"after round {r}")
+        h(f"4. Federated learning: cn starts the aggregator in b, {rounds} rounds, clients in az, b, cn")
+        r = await send(urls["cn"], "b", "pd-aggregator", {"type": "fl.start"})
+        print(f"  fl.start -> {r['state']}")
+        seen = 0
+        while True:
+            st = await send(urls["az"], "b", "pd-aggregator", {"type": "fl.status"})
+            for rec in st["history"][seen:]:
+                bar = "#" * int(rec["global_acc"] * 40)
+                print(f"  round {rec['round']}: benchmark accuracy {rec['global_acc']:.1%} {G}{bar}{X} "
+                      f"{DIM}({', '.join(rec['clients'])}){X}")
+            seen = len(st["history"])
+            if st["state"] in ("done", "failed", "stopped"):
+                break
+            await asyncio.sleep(0.3)
+        print(f"  state: {st['state']}; model saved to {work / 'b' / 'models' / 'proxy-student-latest.npz'}")
+        ok &= st["state"] == "done"
+        await asyncio.sleep(0.5)
+        for z in ("az", "cn", "b"):
+            s = await send(urls[z], z, "proxy-doctor", {"type": "status"})
+            print(f"  proxy-doctor@{z} now uses {DIM}{s['model']}{X}")
 
-        h("5. zone-a after FL: a Kubernetes-style problem it never saw locally")
-        ask(a, "no_proxy_internal", "git clone https://git.corp.example fails: 502 Bad Gateway from proxy")
+        h("5. Security")
+        bad = HubClient(GatewaySettings(zone="b", role="spoke", hub_url=hub_url, hub_token="stolen-or-wrong"))
+        try:
+            await bad.call("GET", "/hub/directory")
+            print(f"  {R}wrong token accepted!{X}")
+            ok = False
+        except PermissionError as exc:
+            print(f"  spoke with a wrong token: {G}rejected{X} {DIM}({exc}){X}")
+        await bad.close()
+        print("  tokens never travel on the wire (HMAC per request); the hub signs every answer")
 
-        print(f"\n{G}Demo complete.{X} Dashboards: " + "  ".join(args.zones))
-        if args.keep and procs:
-            print("zones keep running - Ctrl+C to stop")
-            while True:
-                time.sleep(3600)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        for p in procs:
-            p.terminate()
+        print(f"\n{G if ok else R}{B}demo {'passed' if ok else 'FAILED'}{X}")
+        if keep:
+            print(f"\nZones keep running. Try:\n  curl -s {urls['cn']}/send -H 'content-type: application/json' "
+                  "-d '{\"target_zone\":\"b\",\"target_agent\":\"pd-aggregator\",\"payload\":{\"type\":\"fl.status\"}}'"
+                  f"\n  python -m agentzones.cli --gateway {urls['b']} directory\nCtrl+C to stop.")
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.Event().wait()
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--keep", action="store_true", help="leave the zones running")
+    ap.add_argument("--rounds", type=int, default=5)
+    a = ap.parse_args()
+    try:
+        sys.exit(asyncio.run(main(a.keep, a.rounds)))
+    except KeyboardInterrupt:
+        pass

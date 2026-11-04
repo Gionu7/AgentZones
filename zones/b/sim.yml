@@ -1,0 +1,44 @@
+# Added by scripts/zone.sh when COMPOSE_PROFILES contains "sim": zone b on one host, with the
+# network constraints enforced. b's network is internal (no route out); the squid proxy is the only
+# container on both b's network and the shared agent-mesh. "console" only forwards the local API and
+# MCP ports to 127.0.0.1 on this host, because Docker cannot publish ports of an internal network.
+
+x-via-proxy: &via-proxy
+  HTTPS_PROXY: http://proxy:3128
+  HTTP_PROXY: http://proxy:3128
+
+services:
+  proxy:
+    image: ${SQUID_IMAGE:-ubuntu/squid:6.10-24.10_beta}
+    profiles: [sim]
+    networks: [default, agent-mesh]
+    restart: unless-stopped
+
+  console:
+    image: ${SOCAT_IMAGE:-alpine/socat:1.8.0.3}
+    profiles: [sim]
+    entrypoint: ["sh", "-c", "socat TCP-LISTEN:8080,fork,reuseaddr TCP:gateway:8080 & socat TCP-LISTEN:8000,fork,reuseaddr TCP:mcp:8000"]
+    ports: ["127.0.0.1:${ZONE_PORT:-8081}:8080", "127.0.0.1:${MCP_PORT:-8001}:8000"]
+    networks: [default, b-console]
+    restart: unless-stopped
+
+  gateway:
+    environment: { HUB_PROXY: "http://proxy:3128" }
+    ports: !reset []
+  mcp:
+    ports: !reset []
+  mnist-client:
+    environment: *via-proxy
+  mnist-aggregator:
+    environment: *via-proxy
+  proxy-doctor:
+    environment: *via-proxy
+  assistant:
+    environment: *via-proxy
+  ollama:
+    environment: *via-proxy
+
+networks:
+  default: { internal: true }
+  b-console: {}
+  agent-mesh: { external: true }

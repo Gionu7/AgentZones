@@ -1,0 +1,49 @@
+# Zone az: the HUB (Azure VM, the only zone that accepts incoming connections).
+#   scripts/zone.sh az
+# On the VM: export GATEWAY_BIND=0.0.0.0 ZONE_B_TOKEN=... ZONE_CN_TOKEN=...  and allow inbound TCP 9090.
+name: az
+
+services:
+  gateway:
+    extends: { file: ../../zone/base.yml, service: gateway }
+    environment:
+      ZONE: az
+      ROLE: hub
+      SPOKE_TOKENS: b=${ZONE_B_TOKEN:-dev-token-b},cn=${ZONE_CN_TOKEN:-dev-token-cn}
+    ports:
+      - "127.0.0.1:${ZONE_PORT:-8080}:8080"          # local API: this host only
+      - "${GATEWAY_BIND:-127.0.0.1}:${HUB_PORT:-9090}:9090"   # hub API: spokes connect here
+    networks:
+      default: {}
+      agent-mesh: { aliases: [hub] }
+
+  mcp:
+    extends: { file: ../../zone/base.yml, service: mcp }
+    ports: ["127.0.0.1:${MCP_PORT:-8000}:8000"]
+
+  mnist-client:
+    extends: { file: ../../zone/base.yml, service: fl-client }
+    environment:
+      AGENT_NAME: mnist-client
+      FL_JOB: mnist
+      FL_TASK: tasks.mnist:MnistClient
+      FL_CLIENT_INDEX: "0"
+      FL_NUM_CLIENTS: "3"
+      LABELS: ${AZ_LABELS:-}
+    volumes: [mnist-data:/data]
+
+  proxy-doctor:
+    extends: { file: ../../zone/base.yml, service: proxy-doctor }
+    environment: { PD_PROFILE: dev-laptops }
+    volumes: [pd-data:/data]
+
+  assistant:
+    extends: { file: ../../zone/base.yml, service: assistant }
+  ollama:
+    extends: { file: ../../zone/base.yml, service: ollama }
+    volumes: [ollama:/root/.ollama]
+
+networks:
+  agent-mesh: { external: true }
+
+volumes: { mnist-data: {}, pd-data: {}, ollama: {} }

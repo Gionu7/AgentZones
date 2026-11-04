@@ -93,31 +93,34 @@ python llama.cpp/convert_hf_to_gguf.py models/proxy-doctor-1.5b/merged --outtype
 ollama create proxy-doctor -f proxy_doctor/distill/Modelfile
 ```
 
-Finally, set `model.model: proxy-doctor` in `zone.yaml`.
+Finally, start the zone with `MODEL_NAME=proxy-doctor` (and `COMPOSE_PROFILES=llm`).
 
 ## 4. Federated learning across zones
 
-Each zone trains the student on its *local* cases. Today these are synthetic, generated with the site's profile.
-In production they would be the doctor's own verified diagnoses (`federated.data.cases_path`, JSONL
-`{"obs", "label"}`). Zones then average weights with FedAvg; see [ARCHITECTURE.md](ARCHITECTURE.md).
+Each zone's `fl-client` trains the student on its *local* cases. Today these are synthetic, generated with the
+site's profile (`PD_PROFILE`). In production they would be the doctor's own verified diagnoses
+(`PD_CASES_PATH`, JSONL `{"obs", "label"}`). The aggregator averages the weights with FedAvg each round; the
+plugin is [tasks/proxy_student.py](../tasks/proxy_student.py) and the protocol is in
+[ARCHITECTURE.md](ARCHITECTURE.md). Point a client's `FL_MODEL_OUT` and the doctor's `PD_MODEL_PATH` at the same
+file and the doctor switches to the federated model when a run is done.
 
 Typical result from `python scripts/demo.py`, measured on the shared synthetic benchmark, which is used for
 evaluation only:
 
-| | zone-a (dev laptops) | zone-b (build servers) | zone-c (k8s) |
-|---|---|---|---|
-| Local data only | 50% | 43% | 46% |
-| After 1 FedAvg round | 72% | 72% | 72% |
-| After 4 rounds | **95%** | **95%** | **95%** |
+| | benchmark accuracy |
+|---|---|
+| Each site's own model (local data only) | 25–50% on problems from other sites |
+| After 1 FedAvg round (az, b, cn) | about 70% |
+| After 3 rounds | **about 96%** |
 
-Each site alone is good at its own problems (85–96% on local hold-out data) and bad at everyone else's.
-Federation fixes that without any site sharing its incident data.
+Each site alone is good at its own problems and bad at everyone else's. Federation fixes that without any site
+sharing its incident data.
 
 ## Questions for the mentors
 
 * **Distillation:** soft labels from a teacher LLM, versus teacher-generated *rationales* plus SFT of the small
   LLM, versus both. What is the right temperature and alpha for so few classes?
-* **FL:** non-IID handling (FedProx, per-site personalisation layers). Secure aggregation in a network with no
-  coordinator. How much differential-privacy noise is acceptable?
+* **FL:** non-IID handling (FedProx, per-site personalisation layers). Secure aggregation, so the aggregator in b never sees a
+  single zone's update. How much differential-privacy noise is acceptable?
 * **Azure ML:** an MCP server around Azure ML (submit, track and register jobs) so that agents in a zone can
   start the GPU fine-tune themselves.

@@ -1,0 +1,89 @@
+# Building blocks for zone files. A zone file (zones/<zone>/zone.yml) picks services from here with
+#   extends: { file: ../../zone/base.yml, service: <name> }
+# and adds its own environment. Everything runs from one image (deploy/Dockerfile).
+
+services:
+  gateway:
+    image: ${AGENTZONES_IMAGE:-agentzones:latest}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args: { HTTP_PROXY: "${BUILD_HTTP_PROXY:-}", HTTPS_PROXY: "${BUILD_HTTPS_PROXY:-}", APT_PACKAGES: "${APT_PACKAGES-git}" }
+    command: ["agentzone", "gateway"]
+    environment:
+      ROLE: spoke
+      HUB_URL: ${HUB_URL:-http://hub:9090}
+      HUB_TOKEN: ${HUB_TOKEN:-}
+      HUB_PROXY: ${HUB_PROXY:-}
+      ZONE_API_TOKEN: ${ZONE_API_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+    restart: unless-stopped
+
+  mcp:   # MCP server (list_agents, send_message) for MCP clients on this host
+    image: ${AGENTZONES_IMAGE:-agentzones:latest}
+    command: ["agentzone", "mcp"]
+    environment:
+      GATEWAY_URL: http://gateway:8080
+      ZONE_API_TOKEN: ${ZONE_API_TOKEN:-}
+    restart: unless-stopped
+
+  agent:   # any agent: set AGENT_NAME (= the service name) and AGENT_IMPL
+    image: ${AGENTZONES_IMAGE:-agentzones:latest}
+    command: ["agentzone", "agent"]
+    environment:
+      GATEWAY_URL: http://gateway:8080
+      ZONE_API_TOKEN: ${ZONE_API_TOKEN:-}
+      AGENT_PORT: "9000"
+      AGENT_BLAS_THREADS: ${AGENT_BLAS_THREADS:-2}
+      HTTPS_PROXY: ${AGENT_HTTPS_PROXY:-}
+      HTTP_PROXY: ${AGENT_HTTP_PROXY:-}
+      NO_PROXY: gateway,ollama,localhost,127.0.0.1
+    volumes:
+      - ${HOST_CA_BUNDLE:-/dev/null}:/etc/agentzones/extra-ca.crt:ro
+    restart: unless-stopped
+
+  fl-client:
+    extends: { service: agent }
+    environment:
+      AGENT_IMPL: agentzones.fl.client:FLClient
+      DATA_DIR: /data
+      MNIST_URL: ${MNIST_URL:-https://storage.googleapis.com/tensorflow/tf-keras-datasets/mnist.npz}
+
+  fl-aggregator:
+    extends: { service: agent }
+    environment:
+      AGENT_IMPL: agentzones.fl.aggregator:FLAggregator
+      FL_MODEL_DIR: /models
+      DATA_DIR: /data
+      MNIST_URL: ${MNIST_URL:-https://storage.googleapis.com/tensorflow/tf-keras-datasets/mnist.npz}
+
+  proxy-doctor:
+    extends: { service: agent }
+    environment:
+      AGENT_NAME: proxy-doctor
+      AGENT_IMPL: proxy_doctor.agent:ProxyDoctor
+      DATA_DIR: /data
+      MODEL_URL: http://ollama:11434/v1
+      MODEL_NAME: ${MODEL_NAME:-qwen2.5:1.5b}
+
+  assistant:   # generic tool-calling agent on the local model (COMPOSE_PROFILES=llm)
+    extends: { service: agent }
+    profiles: [llm]
+    environment:
+      AGENT_NAME: assistant
+      AGENT_IMPL: agentzones.llm_agent:LLMAgent
+      MODEL_URL: http://ollama:11434/v1
+      MODEL_NAME: ${MODEL_NAME:-qwen2.5:1.5b}
+      MCP_SERVERS: '[{"name": "proxy", "command": "python", "args": ["-m", "proxy_doctor.mcp_server"]}]'
+      TOOLS: proxy.*
+
+  ollama:   # local LLM (COMPOSE_PROFILES=llm); pulls MODEL_NAME on first start
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.12.6}
+    profiles: [llm]
+    entrypoint: ["sh", "-c", "ollama serve & sleep 3; ollama pull ${MODEL_NAME:-qwen2.5:1.5b}; wait"]
+    environment:
+      HTTPS_PROXY: ${AGENT_HTTPS_PROXY:-}
+    restart: unless-stopped

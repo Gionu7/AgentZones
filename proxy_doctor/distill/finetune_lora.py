@@ -8,7 +8,7 @@ Then serve it on laptops with Ollama (see proxy_doctor/distill/Modelfile):
     python llama.cpp/convert_hf_to_gguf.py models/proxy-doctor-1.5b/merged --outtype q8_0 \\
         --outfile models/proxy-doctor-1.5b.gguf
     ollama create proxy-doctor -f proxy_doctor/distill/Modelfile
-and set ``model.model: proxy-doctor`` in zone.yaml.
+and set ``MODEL_NAME=proxy-doctor`` for the zone (zone/base.yml passes it to its agents).
 
 Also runnable as an Azure ML command job (see docs/DISTILLATION.md).
 """
