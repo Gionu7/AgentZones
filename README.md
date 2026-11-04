@@ -148,6 +148,23 @@ The hub only records each message's type and size, never its contents. A spoke's
 its hub connection, the directory and the FL jobs. If `ZONE_API_TOKEN` is set, open the page as
 `http://127.0.0.1:8080/#token=<token>`.
 
+## Local models and laptops
+
+Agents call any OpenAI-compatible server (`MODEL_URL`, `MODEL_NAME`); Ollama is the easy choice. The model can
+come from the Ollama library, Hugging Face, an internal mirror or a file (`MODEL_SOURCE`), and
+`agentzone model setup` loads it. Models from the Azure ML registry are downloaded once and used as a file.
+For Docker zones, `COMPOSE_PROFILES=llm` adds an Ollama container (`AGENTZONES_GPU=1` for NVIDIA GPUs) and
+`host-llm` uses the host's server.
+
+On a personal or work laptop, run a whole zone natively, as a spoke of the hub or on its own:
+
+```bash
+agentzone laptop --zone laptop-alice --hub http://<az-host>:9090 --token <token>
+```
+
+The hub accepts laptops listed in `EXTRA_SPOKE_TOKENS`. Which model fits which machine, and the details:
+[docs/MODELS.md](docs/MODELS.md).
+
 ## Try it without Docker
 
 ```bash
@@ -220,7 +237,8 @@ Other settings:
   unlimited made rounds about 250× slower.
 - `HOST_CA_BUNDLE` is a CA bundle that agents trust for HTTPS downloads behind a TLS-inspecting proxy.
   `AGENT_HTTPS_PROXY` is the proxy they use for those downloads. `MNIST_URL` can point at an internal mirror.
-- `COMPOSE_PROFILES=llm` adds Ollama and a generic `assistant` LLM agent to a zone.
+- `COMPOSE_PROFILES=llm` adds Ollama and a generic `assistant` LLM agent to a zone; `host-llm` adds the
+  assistant on the host's model server. See [docs/MODELS.md](docs/MODELS.md).
 - `APT_PACKAGES=` builds the image without apt, if the build network cannot reach a Debian mirror.
 
 ## Security notes
@@ -263,6 +281,7 @@ complete federated-learning run.
 | `agentzones/gateway.py`, `hub.py`, `security.py` | gateway (local API + hub API), mailboxes and routing, signing |
 | `agentzones/dashboard.py`, `static/dashboard.html` | the zone dashboard |
 | `agentzones/agent.py`, `llm_agent.py`, `mcp_gateway.py` | agent base class and host, LLM agent, zone MCP server |
+| `agentzones/models.py`, `laptop.py` | `agentzone model setup`, `agentzone laptop` |
 | `agentzones/fl/` | generic FL: plugin interfaces, client and aggregator agents |
 | `tasks/` | FL plugins (MNIST, Proxy Doctor student) |
 | `proxy_doctor/` | Proxy Doctor: diagnostics, MCP server, student model, distillation |

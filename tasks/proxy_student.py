@@ -51,6 +51,10 @@ class ProxyStudentStrategy(FedAvg):
         self.X, self.y = featurize_many(cases), labels
 
     def initial_parameters(self) -> Parameters:
+        """Start from the distilled student (PD_INIT_FROM, e.g. models/student.npz) or from zeros."""
+        path = self.config.get("PD_INIT_FROM", "")
+        if path and os.path.exists(path):
+            return {"W": Student.load(path).W}
         return {"W": np.zeros((DIM, len(CLASSES)))}
 
     def evaluate(self, rnd: int, parameters: Parameters) -> Metrics:
