@@ -49,9 +49,7 @@ class Dashboard:
             job = next(c.split(":", 1)[1] for c in e["capabilities"] if c.startswith("fl-aggregator:"))
             clients = [f"{c['agent']}@{c['zone']}" for c in directory if f"fl-client:{job}" in c["capabilities"]]
             jobs.append({"zone": e["zone"], "agent": e["agent"], "job": job, "clients": clients,
-                         "status": {k: r.get(k) for k in ("state", "run", "round", "rounds", "min_clients",
-                                                          "min_fit_clients", "error", "history")}
-                         if "state" in r else None, "error": r.get("error") if "state" not in r else None})
+                         "status": r if "state" in r else None, "error": r.get("error") if "state" not in r else None})
         return jobs
 
     async def _doctor_status(self, directory: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -75,6 +73,7 @@ class Dashboard:
         if gw.hub:
             out["traffic"] = list(gw.hub.traffic)[-150:]
             out["totals"] = gw.hub.totals
+            out["rate"] = [r for r in gw.hub.rate if r[0] >= int(time.time()) - 120]  # [sec, fl, pd, other, bytes]
         return out
 
 

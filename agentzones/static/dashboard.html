@@ -10,6 +10,7 @@
   --soft: #f0f2f5; --accent: #4f46e5; --accent-soft: #eef0ff; --teal: #0f8a7e; --teal-soft: #e6f6f4;
   --amber: #b86e00; --amber-soft: #fff4e0; --red: #d1342f; --red-soft: #fdeceb; --green: #178a46;
   --green-soft: #e7f6ed; --node: #ffffff; --hub: #18202b; --hub-ink: #ffffff;
+  --c1: #4f46e5; --c2: #0f8a7e; --c3: #c2410c; --c4: #be185d; --c5: #0369a1; --c6: #65a30d;
   --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 3px rgba(16, 24, 40, .06);
   color-scheme: light;
 }
@@ -19,46 +20,57 @@
     --soft: #1b2230; --accent: #8b8cf9; --accent-soft: #23254a; --teal: #3cc7b5; --teal-soft: #11302d;
     --amber: #f0a73c; --amber-soft: #352610; --red: #f2665f; --red-soft: #3a1716; --green: #4cc97f;
     --green-soft: #12301f; --node: #1b2230; --hub: #e6ebf1; --hub-ink: #0c1016;
+    --c1: #8b8cf9; --c2: #3cc7b5; --c3: #fb923c; --c4: #f472b6; --c5: #38bdf8; --c6: #a3e635;
     --shadow: none; color-scheme: dark;
   }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI",
   Roboto, "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
-.num, td.t, .mono { font-variant-numeric: tabular-nums; }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
-.wrap { max-width: 1440px; margin: 0 auto; padding: 20px 24px 40px; }
-header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+.num { font-variant-numeric: tabular-nums; }
+.wrap { max-width: 1440px; margin: 0 auto; padding: 18px 24px 40px; }
+header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
 h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
-.zone-badge { display: inline-flex; gap: 6px; align-items: center; padding: 3px 10px; border-radius: 999px;
-  background: var(--hub); color: var(--hub-ink); font-weight: 600; font-size: 13px; }
+.zone-badge { padding: 3px 10px; border-radius: 999px; background: var(--hub); color: var(--hub-ink);
+  font-weight: 600; font-size: 13px; }
 .live { margin-left: auto; color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; flex: none; }
 .dot.off { background: var(--red); }
+nav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; overflow-x: auto; }
+nav a { padding: 9px 14px; color: var(--muted); text-decoration: none; font-weight: 550; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; white-space: nowrap; display: flex; align-items: center; gap: 7px; }
+nav a:hover { color: var(--ink); }
+nav a.on { color: var(--ink); border-bottom-color: var(--accent); }
+nav .count { background: var(--red); color: #fff; border-radius: 99px; font-size: 11px; padding: 0 6px; line-height: 17px; }
+nav .count.info { background: var(--amber); }
 .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
-.stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
-  box-shadow: var(--shadow); }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 11px 14px; box-shadow: var(--shadow); }
 .stat .k { color: var(--muted); font-size: 12px; }
-.stat .v { font-size: 24px; font-weight: 650; letter-spacing: -.02em; margin-top: 2px; }
+.stat .v { font-size: 23px; font-weight: 650; letter-spacing: -.02em; margin-top: 1px; }
 .stat .v small { font-size: 13px; color: var(--muted); font-weight: 500; margin-left: 4px; }
 .stat.warn .v { color: var(--red); }
 .grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; margin-bottom: 16px; }
+.grid.even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
   min-width: 0; display: flex; flex-direction: column; }
-.card > h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0;
-  padding: 14px 16px 0; display: flex; align-items: center; gap: 10px; }
+.card > h2 { font-size: 12.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0;
+  padding: 14px 16px 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .card > h2 .right { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.card > h2 a { color: var(--accent); text-decoration: none; }
 .body { padding: 12px 16px 16px; min-width: 0; }
+.explain { color: var(--muted); font-size: 13px; margin: 0 0 10px; max-width: 80ch; }
+.explain b { color: var(--ink); font-weight: 600; }
+svg { display: block; width: 100%; height: auto; }
 svg text { font-family: inherit; }
-#topo { width: 100%; height: auto; display: block; }
-.legend { display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); font-size: 12px; padding: 0 16px 14px; }
-.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px;
-  vertical-align: -1px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--soft); color: var(--muted);
   font-size: 12px; white-space: nowrap; }
 .chip.fl { background: var(--accent-soft); color: var(--accent); }
 .chip.pd { background: var(--teal-soft); color: var(--teal); }
+.chip.bad { background: var(--red-soft); color: var(--red); }
+.chip.warn { background: var(--amber-soft); color: var(--amber); }
 .badge { display: inline-block; padding: 2px 9px; border-radius: 6px; font-size: 12px; font-weight: 600;
   text-transform: uppercase; letter-spacing: .03em; }
 .s-done { background: var(--green-soft); color: var(--green); }
@@ -66,25 +78,21 @@ svg text { font-family: inherit; }
 .s-waiting_for_clients { background: var(--amber-soft); color: var(--amber); }
 .s-failed, .s-stopped { background: var(--red-soft); color: var(--red); }
 .s-idle { background: var(--soft); color: var(--muted); }
-.fl-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.fl-head .job { font-size: 18px; font-weight: 650; }
-.fl-head .where { color: var(--muted); font-size: 13px; }
-.bigline { display: flex; gap: 24px; margin: 12px 0 6px; flex-wrap: wrap; }
-.bigline .v { font-size: 30px; font-weight: 650; letter-spacing: -.02em; }
-.bigline .k { color: var(--muted); font-size: 12px; }
-.bar { height: 6px; background: var(--soft); border-radius: 99px; overflow: hidden; margin: 6px 0 14px; }
+.kpis { display: flex; gap: 26px; margin: 10px 0 6px; flex-wrap: wrap; }
+.kpis .v { font-size: 28px; font-weight: 650; letter-spacing: -.02em; }
+.kpis .k { color: var(--muted); font-size: 12px; }
+.bar { height: 6px; background: var(--soft); border-radius: 99px; overflow: hidden; margin: 6px 0 12px; }
 .bar > div { height: 100%; background: var(--accent); border-radius: 99px; transition: width .4s; }
-#chart { width: 100%; height: auto; display: block; }
-.controls { display: flex; gap: 8px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .controls input { width: 70px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px;
   background: var(--card); color: var(--ink); font: inherit; }
 button { font: inherit; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line); cursor: pointer;
   background: var(--card); color: var(--ink); font-weight: 550; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.ok { background: var(--green); border-color: var(--green); color: #fff; }
 button:disabled { opacity: .45; cursor: default; }
-button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-select { font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card);
-  color: var(--ink); }
+button:focus-visible, input:focus-visible, select:focus-visible, nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+select { font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
 .msg { color: var(--muted); font-size: 13px; }
 .err { color: var(--red); font-size: 13px; }
 .zones { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
@@ -96,31 +104,37 @@ select { font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid 
 .agent .n { font-weight: 600; overflow-wrap: anywhere; }
 .agent .d { color: var(--muted); font-size: 12px; margin: 2px 0 6px; overflow-wrap: anywhere; }
 .agent .x { color: var(--teal); font-size: 12px; margin-top: 4px; }
-.table-wrap { overflow: auto; max-height: 430px; }
+.table-wrap { overflow: auto; max-height: 440px; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; padding: 6px 8px;
   border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--card); }
-td { padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-td.t { color: var(--muted); }
-td.size { text-align: right; color: var(--muted); }
+td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td.t { color: var(--muted); white-space: nowrap; }
+td.r { text-align: right; color: var(--muted); white-space: nowrap; }
 tr.reply td { color: var(--muted); }
 tr.fresh td { animation: flash 1.6s ease-out; }
 @keyframes flash { from { background: var(--accent-soft); } to { background: transparent; } }
 .arrow { color: var(--faint); padding: 0 5px; }
-td.route { white-space: normal; }
-label.tog { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted);
-  text-transform: none; letter-spacing: 0; font-weight: 400; cursor: pointer; }
-.events { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow: auto; }
-.ev { display: grid; grid-template-columns: 70px 80px minmax(0, 1fr); gap: 10px; padding: 4px 0; font-size: 13px;
+label.tog { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); cursor: pointer; }
+.ev { display: grid; grid-template-columns: 70px 80px minmax(0, 1fr); gap: 10px; padding: 5px 0; font-size: 13px;
   border-bottom: 1px solid var(--line); }
-.ev .t { color: var(--muted); }
-.ev .kind { color: var(--muted); }
-.ev.security { color: var(--red); }
-.ev.security .kind { color: var(--red); font-weight: 600; }
+.ev .t, .ev .kind { color: var(--muted); }
+.ev.security, .ev.security .kind { color: var(--red); }
+.ev.security .kind { font-weight: 600; }
 .empty { color: var(--muted); padding: 18px 0; text-align: center; font-size: 13px; }
-@media (max-width: 1100px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.pending { border: 1px solid var(--amber); background: var(--amber-soft); border-radius: 10px; padding: 10px 12px;
+  margin-bottom: 8px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.pending .what { flex: 1; min-width: 200px; }
+.pending .what b { color: var(--ink); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 13px; margin: 10px 0 0; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; }
+.kpis > div { min-width: 0; }
+@media (max-width: 720px) { .kpis { gap: 16px; } .kpis .v { font-size: 22px; } }
+.page[hidden], [hidden] { display: none !important; }
+@media (max-width: 1100px) { .grid, .grid.even { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 720px) {
-  .wrap { padding: 14px 16px 30px; }
+  .wrap { padding: 12px 16px 30px; }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .live { margin-left: 0; width: 100%; }
 }
@@ -134,66 +148,164 @@ label.tog { display: inline-flex; gap: 6px; align-items: center; font-size: 12px
     <span class="zone-badge" id="zoneBadge">…</span>
     <span class="live"><span class="dot" id="liveDot"></span><span id="liveText">connecting…</span></span>
   </header>
-
+  <nav id="nav" aria-label="Pages"></nav>
   <section class="stats" id="stats" aria-label="Summary"></section>
 
-  <section class="grid">
-    <div class="card">
-      <h2>Network <span class="right msg" id="topoNote"></span></h2>
-      <div class="body" style="padding-bottom:6px"><svg id="topo" viewBox="0 0 800 400" role="img"
-        aria-label="Zones and the messages between them"></svg></div>
-      <div class="legend">
-        <span><i style="background:var(--accent)"></i>federated learning</span>
-        <span><i style="background:var(--teal)"></i>Proxy Doctor</span>
-        <span><i style="background:var(--faint)"></i>other</span>
-        <span><i style="background:transparent;border:2px solid var(--muted);width:9px;height:9px"></i>reply</span>
-      </div>
-    </div>
-    <div class="card">
-      <h2>Federated learning <span class="right" id="jobPick"></span></h2>
-      <div class="body" id="fl"><div class="empty">No aggregator in the directory yet.</div></div>
-    </div>
-  </section>
+  <!-- ============================================================ overview -->
+  <main class="page" id="page-overview">
+    <section class="grid">
+      <div class="card"><h2>Network <span class="right"><a href="#network">details →</a></span></h2>
+        <div class="body"><svg id="topo-overview" viewBox="0 0 800 400" role="img" aria-label="Zones and messages"></svg>
+          <div class="legend" id="legend-overview"></div></div></div>
+      <div class="card"><h2>Federated learning <span class="right"><a href="#learning">details →</a></span></h2>
+        <div class="body" id="fl-overview"></div></div>
+    </section>
+    <section class="grid">
+      <div class="card"><h2>Messages through the hub, last 2 minutes</h2>
+        <div class="body"><div id="rate-overview"></div></div></div>
+      <div class="card"><h2>Latest events <span class="right"><a href="#security">all →</a></span></h2>
+        <div class="body" id="events-overview"></div></div>
+    </section>
+  </main>
 
-  <section class="grid">
-    <div class="card">
-      <h2>Agents</h2>
-      <div class="body"><div class="zones" id="zones"></div></div>
-    </div>
-    <div class="card">
-      <h2>Traffic through the hub
-        <span class="right"><label class="tog"><input type="checkbox" id="showDash"> show dashboard polling</label></span>
-      </h2>
-      <div class="body">
-        <div class="table-wrap"><table>
-          <thead><tr><th>time</th><th>route</th><th>message</th><th style="text-align:right">size</th></tr></thead>
-          <tbody id="traffic"></tbody>
-        </table></div>
-        <div class="msg" id="trafficNote" style="margin-top:8px"></div>
-      </div>
-    </div>
-  </section>
+  <!-- ============================================================ network -->
+  <main class="page" id="page-network" hidden>
+    <section class="grid">
+      <div class="card"><h2>Zones <span class="right msg" id="topoNote"></span></h2>
+        <div class="body"><svg id="topo-network" viewBox="0 0 800 400" role="img" aria-label="Zones and messages"></svg>
+          <div class="legend" id="legend-network"></div></div></div>
+      <div class="card"><h2>Spokes</h2><div class="body" id="spokes"></div></div>
+    </section>
+    <section class="card" style="margin-bottom:16px"><h2>How a message from b reaches cn</h2>
+      <div class="body"><p class="explain">Nobody connects <b>into</b> b or cn. Both keep a <b>long poll</b> open to the
+        hub, so the hub can hand them messages at any time, and they post their replies back the same way.</p>
+        <svg viewBox="0 0 1000 170" id="msgflow" role="img" aria-label="Path of a message"></svg></div></section>
+    <section class="grid even">
+      <div class="card"><h2>Messages per second</h2><div class="body" id="rate-network"></div></div>
+      <div class="card"><h2>Traffic by route <span class="right msg">since the hub started</span></h2>
+        <div class="body" id="routes"></div></div>
+    </section>
+    <section class="card"><h2>Traffic log
+        <span class="right"><label class="tog"><input type="checkbox" id="showDash"> show dashboard polling</label></span></h2>
+      <div class="body"><div class="table-wrap"><table>
+        <thead><tr><th>time</th><th>route</th><th>message</th><th style="text-align:right">size</th></tr></thead>
+        <tbody id="traffic"></tbody></table></div>
+        <div class="msg" id="trafficNote" style="margin-top:8px"></div></div></section>
+  </main>
 
-  <section class="card">
-    <h2>Events <span class="right msg" id="evNote">gateway of this zone</span></h2>
-    <div class="body"><div class="events" id="events"></div></div>
-  </section>
+  <!-- ============================================================ learning -->
+  <main class="page" id="page-learning" hidden>
+    <div id="fl-empty" class="card"><div class="body"><div class="empty">No federated-learning aggregator in the directory yet.</div></div></div>
+    <div id="fl-page">
+      <section class="grid">
+        <div class="card"><h2>Job <span class="right" id="jobPick"></span></h2><div class="body" id="fl-head"></div></div>
+        <div class="card"><h2>Who decides</h2><div class="body" id="fl-control"></div></div>
+      </section>
+      <section class="card" style="margin-bottom:16px"><h2>Lifecycle of a run</h2>
+        <div class="body"><svg viewBox="0 0 1000 185" id="lifecycle" role="img" aria-label="Run states"></svg></div></section>
+      <section class="card" style="margin-bottom:16px"><h2>One round</h2>
+        <div class="body"><p class="explain">Each round the aggregator sends the current global model to every client.
+          Each client trains it on <b>its own data</b>, which never leaves its zone, and sends back new weights and its
+          number of samples. The aggregator checks the updates and averages them, <b>weighted by samples</b>.</p>
+          <svg viewBox="0 0 1000 170" id="roundflow" role="img" aria-label="Steps of a round"></svg></div></section>
+      <section class="grid even">
+        <div class="card"><h2>Global model <span class="right msg" id="metricName"></span></h2><div class="body" id="chart-global"></div></div>
+        <div class="card"><h2>Each client after local training</h2><div class="body" id="chart-clients"></div></div>
+      </section>
+      <section class="grid even">
+        <div class="card"><h2>Weight of each client in FedAvg</h2><div class="body"><p class="explain">Each client's share
+          of the average, per round: its samples divided by the total. A rejected update gets no share (✕).</p>
+          <div id="chart-shares"></div></div></div>
+        <div class="card"><h2>Update size per client</h2><div class="body"><p class="explain">How far each client moved the
+          model it received. An update far above the others' median is dropped (<span id="ratioNote"></span>).</p>
+          <div id="chart-norms"></div></div></div>
+      </section>
+      <section class="grid even">
+        <div class="card"><h2>Last round, per client</h2><div class="body" id="contrib"></div></div>
+        <div class="card"><h2>Time per round</h2><div class="body" id="chart-time"></div></div>
+      </section>
+      <section class="card"><h2>Audit log <span class="right msg">every start, stop, request and decision</span></h2>
+        <div class="body"><div class="table-wrap" style="max-height:340px"><table>
+          <thead><tr><th>time</th><th>who</th><th>action</th><th>outcome</th><th>details</th></tr></thead>
+          <tbody id="audit"></tbody></table></div></div></section>
+    </div>
+  </main>
+
+  <!-- ============================================================ agents -->
+  <main class="page" id="page-agents" hidden>
+    <section class="card" style="margin-bottom:16px"><h2>Agents in all zones</h2>
+      <div class="body"><p class="explain">Agents register with <b>their own zone's gateway</b> every 10 s. Spoke gateways
+        pass the list to the hub, which keeps one directory for all zones. Agents find each other by <b>capability</b>.</p>
+        <div class="zones" id="zones"></div></div></section>
+    <section class="card"><h2>Proxy Doctor</h2>
+      <div class="body"><p class="explain">Diagnoses proxy and certificate problems on <b>its own</b> machine. When unsure,
+        it consults the doctors of the other zones, sending the diagnostic observation only. It shares a fix only after
+        applying it and seeing the checks pass.</p>
+        <svg viewBox="0 0 1000 170" id="pdflow" role="img" aria-label="Proxy Doctor flow"></svg>
+        <div id="pdfixes" style="margin-top:14px"></div></div></section>
+  </main>
+
+  <!-- ============================================================ security -->
+  <main class="page" id="page-security" hidden>
+    <section class="card" style="margin-bottom:16px"><h2>How spokes and the hub trust each other</h2>
+      <div class="body"><p class="explain">Each spoke has its own token, shared only with the hub. The token is a signing key
+        and <b>never travels</b>. A proxy on the path can read messages but cannot change them, replay them or use the token.</p>
+        <svg viewBox="0 0 1000 170" id="secflow" role="img" aria-label="Request signing"></svg></div></section>
+    <section class="grid even">
+      <div class="card"><h2>What a proxy on the path can do</h2><div class="body"><div class="table-wrap">
+        <table><thead><tr><th></th><th>plain HTTP (b today)</th><th>HTTPS to the hub</th></tr></thead><tbody>
+          <tr><td>steal the token</td><td><span class="chip pd">no</span></td><td><span class="chip pd">no</span></td></tr>
+          <tr><td>change or inject a message</td><td><span class="chip pd">no</span> <span class="msg">signature breaks</span></td><td><span class="chip pd">no</span></td></tr>
+          <tr><td>replay a request or answer</td><td><span class="chip pd">no</span> <span class="msg">nonce, signed answers</span></td><td><span class="chip pd">no</span></td></tr>
+          <tr><td>read messages and model weights</td><td><span class="chip bad">yes</span></td><td><span class="chip pd">no</span></td></tr>
+          <tr><td>block or delay traffic</td><td><span class="chip warn">yes</span></td><td><span class="chip warn">yes</span></td></tr>
+        </tbody></table></div></div></div>
+      <div class="card"><h2>Rejected requests</h2><div class="body" id="rejected"></div></div>
+    </section>
+    <section class="card"><h2>All events <span class="right msg">gateway of this zone</span></h2>
+      <div class="body"><div class="table-wrap" style="max-height:420px" id="events-all"></div></div></section>
+  </main>
 </div>
 
 <script>
 "use strict";
-const TOKEN = new URLSearchParams(location.hash.slice(1)).get("token") || "";
+// ------------------------------------------------------------------ helpers
+const hashParams = new URLSearchParams(location.hash.slice(1).split("&").filter((p) => p.includes("=")).join("&"));
+let TOKEN = hashParams.get("token") || "";
+try { if (TOKEN) sessionStorage.setItem("az-token", TOKEN); else TOKEN = sessionStorage.getItem("az-token") || ""; } catch (e) { /* storage blocked */ }
 const HEADERS = TOKEN ? { authorization: "Bearer " + TOKEN } : {};
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmtTime = (t) => new Date(t * 1000).toLocaleTimeString([], { hour12: false });
 const fmtBytes = (n) => n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(1) + " MB";
 const fmtPct = (v) => (v * 100).toFixed(1) + "%";
+const fmtPct0 = (v) => Math.round(v * 100) + "%";
+const fmtNum = (v) => Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 1 ? v.toFixed(2) : v.toFixed(3);
 const isDash = (m) => m.from_agent === "dashboard" || m.to_agent === "dashboard";
 const family = (type) => !type ? "other" : type.startsWith("fl.") ? "fl" : type.startsWith("pd.") ? "pd" : "other";
-const COLOR = { fl: "var(--accent)", pd: "var(--teal)", other: "var(--faint)" };
+const FAM = { fl: ["var(--accent)", "federated learning"], pd: ["var(--teal)", "Proxy Doctor"], other: ["var(--faint)", "other"] };
+const PALETTE = ["var(--c1)", "var(--c2)", "var(--c3)", "var(--c4)", "var(--c5)", "var(--c6)"];
+const PAGES = [["overview", "Overview"], ["network", "Network"], ["learning", "Learning"], ["agents", "Agents"], ["security", "Security"]];
 
-let snap = null, lastTraffic = null, selectedJob = null, busy = false, packets = [];
+let snap = null, page = "overview", selectedJob = null, busy = false, packets = [], lastTraffic = null;
+const clientColors = {};
+function colorOf(client) {
+  if (!(client in clientColors)) clientColors[client] = PALETTE[Object.keys(clientColors).length % PALETTE.length];
+  return clientColors[client];
+}
+
+// ------------------------------------------------------------------ pages
+function pageFromHash() {
+  const p = location.hash.slice(1).split("&")[0];
+  return PAGES.some(([id]) => id === p) ? p : "overview";
+}
+function go() {
+  page = pageFromHash();
+  for (const [id] of PAGES) $("page-" + id).hidden = id !== page;
+  packets = [];
+  if (snap) render();
+}
+window.addEventListener("hashchange", go);
 
 // ------------------------------------------------------------------ data
 async function refresh() {
@@ -201,7 +313,7 @@ async function refresh() {
   busy = true;
   try {
     const r = await fetch("dashboard/data", { headers: HEADERS, cache: "no-store" });
-    if (r.status === 401) throw new Error("this zone needs its API token: add #token=… to the URL");
+    if (r.status === 401) throw new Error("this zone needs its API token: open the page with #token=…");
     if (!r.ok) throw new Error("HTTP " + r.status);
     snap = await r.json();
     render();
@@ -210,30 +322,34 @@ async function refresh() {
   } catch (e) {
     $("liveDot").className = "dot off";
     $("liveText").textContent = e.message || "gateway unreachable";
+    console.error(e);
   } finally { busy = false; }
 }
 
 function zonesOf(s) {
-  // zone -> {role, online, last_poll_s, via_proxy, queued, inflight, agents: [...]}
   const zones = {};
   const add = (z) => zones[z] ??= { zone: z, agents: [] };
   add(s.zone).role = s.role;
   for (const [z, info] of Object.entries(s.spokes || {})) {
-    const { agents: _count, ...rest } = info;  // the agent list comes from the directory
+    const { agents: _n, ...rest } = info;  // the agent list comes from the directory
     Object.assign(add(z), rest, { role: "spoke" });
   }
   for (const e of s.directory) add(e.zone).agents.push(e);
-  if (s.hub) {  // a spoke's view: the hub told us its zone name when we registered
-    if (s.hub.zone) add(s.hub.zone).role = "hub";
-    for (const z of Object.values(zones)) z.role ??= "spoke";
-  }
-  const limit = (s.poll_wait_s || 20) + 15;
+  if (s.hub) { if (s.hub.zone) add(s.hub.zone).role = "hub"; for (const z of Object.values(zones)) z.role ??= "spoke"; }
   for (const z of Object.values(zones)) {
-    if (z.role === "spoke" && s.role === "hub") z.online = z.last_poll_s !== null && z.last_poll_s !== undefined && z.last_poll_s < limit;
+    if (s.role === "hub") z.online = z.role === "hub" ? true : !!z.online;
     else if (s.role === "spoke") z.online = z.zone === s.zone || (!!(s.hub && s.hub.connected) && z.agents.length > 0);
     else z.online = true;
   }
   return zones;
+}
+
+function currentJob(s) {
+  const jobs = s.fl || [];
+  if (!jobs.length) return null;
+  const ids = jobs.map((j) => j.job + "@" + j.zone);
+  if (!ids.includes(selectedJob)) selectedJob = ids[0];
+  return jobs[ids.indexOf(selectedJob)];
 }
 
 // ------------------------------------------------------------------ render
@@ -241,12 +357,33 @@ function render() {
   const s = snap, zones = zonesOf(s);
   $("zoneBadge").textContent = s.zone + " · " + s.role;
   document.title = "Agent Zones · " + s.zone;
+  renderNav(s);
   renderStats(s, zones);
-  renderTopology(s, zones);
-  if (document.activeElement?.id !== "roundsIn") renderFL(s);  // don't steal focus while typing
-  renderZones(s, zones);
-  renderTraffic(s);
-  renderEvents(s);
+  const fresh = newTraffic(s);
+  topoSvg = null;
+  if (page === "overview") {
+    renderTopology($("topo-overview"), s, zones); legend("legend-overview");
+    renderFLCard(s); renderRate($("rate-overview"), s, 220, 820); renderEvents($("events-overview"), s, 7);
+  } else if (page === "network") {
+    renderTopology($("topo-network"), s, zones); legend("legend-network");
+    renderSpokes(s, zones); renderMsgFlow(s); renderRate($("rate-network"), s, 230, 680); renderRoutes(s); renderTraffic(s, fresh);
+  } else if (page === "learning") {
+    renderLearning(s);
+  } else if (page === "agents") {
+    renderZones(s, zones); renderPdFlow(s);
+  } else {
+    renderSecFlow(); renderRejected(s); renderEvents($("events-all"), s, 200);
+  }
+  launchPackets(fresh.filter((m) => $("showDash").checked || !isDash(m)));
+}
+
+function renderNav(s) {
+  const pending = (s.fl || []).reduce((a, j) => a + ((j.status && j.status.pending) || []).length, 0);
+  const rejected = s.events.filter((e) => e.kind === "security").length;
+  const badge = { learning: pending ? `<span class="count info" title="requests waiting for approval">${pending}</span>` : "",
+                  security: rejected ? `<span class="count" title="rejected requests">${rejected}</span>` : "" };
+  $("nav").innerHTML = PAGES.map(([id, name]) => `<a href="#${id}" class="${id === page ? "on" : ""}"
+    ${id === page ? 'aria-current="page"' : ""}>${name}${badge[id] || ""}</a>`).join("");
 }
 
 function renderStats(s, zones) {
@@ -256,7 +393,7 @@ function renderStats(s, zones) {
   const msgs = totals.reduce((a, t) => a + t.messages, 0), bytes = totals.reduce((a, t) => a + t.bytes, 0);
   const rejected = s.events.filter((e) => e.kind === "security").length;
   const items = s.role === "hub" ? [
-    ["Spokes online", online + "<small>/ " + spokes.length + "</small>", false],
+    ["Spokes online", online + "<small>/ " + spokes.length + "</small>", online < spokes.length],
     ["Agents", s.directory.length + "<small>in " + Object.keys(zones).length + " zones</small>", false],
     ["Messages via hub", msgs.toLocaleString(), false],
     ["Data via hub", fmtBytes(bytes), false],
@@ -272,10 +409,16 @@ function renderStats(s, zones) {
     `<div class="stat${warn ? " warn" : ""}"><div class="k">${k}</div><div class="v num">${v}</div></div>`).join("");
 }
 
-// --- topology
-let NODE_W = 178, NODE_H = 96, layout = {};
-function renderTopology(s, zones) {
-  const svg = $("topo");
+function legend(id) {
+  $(id).innerHTML = Object.values(FAM).map(([c, n]) => `<span><i style="background:${c};border-radius:50%"></i>${n}</span>`).join("") +
+    `<span><i style="border:2px solid var(--muted);border-radius:50%;width:9px;height:9px"></i>reply</span>`;
+}
+
+// ------------------------------------------------------------------ topology + moving messages
+let layout = {}, topoSvg = null, NODE_W = 196;
+const NODE_H = 96;
+function renderTopology(svg, s, zones) {
+  topoSvg = svg;
   const narrow = svg.clientWidth > 0 && svg.clientWidth < 600;
   const W = narrow ? 440 : 800, H = narrow ? 420 : 400;
   NODE_W = narrow ? 200 : 196;
@@ -284,75 +427,74 @@ function renderTopology(s, zones) {
   const spokes = Object.values(zones).filter((z) => z.role !== "hub").sort((a, b) => a.zone.localeCompare(b.zone));
   layout = {};
   if (hubZone) layout[hubZone.zone] = { x: W / 2, y: H - 76 };
-  spokes.forEach((z, i) => layout[z.zone] = { x: narrow && spokes.length > 1 ? 4 + NODE_W / 2 + (W - 8 - NODE_W) * i / (spokes.length - 1)
-                                                                            : W * (i + 1) / (spokes.length + 1), y: 60 });
-  const pathFor = (z) => {
-    const a = layout[z], b = layout[hubZone.zone];
-    const y1 = a.y + NODE_H / 2, y2 = b.y - NODE_H / 2, my = (y1 + y2) / 2;
-    return `M${a.x},${y1} C${a.x},${my} ${b.x},${my} ${b.x},${y2}`;
-  };
+  spokes.forEach((z, i) => layout[z.zone] = { y: 60, x: narrow && spokes.length > 1
+    ? 4 + NODE_W / 2 + (W - 8 - NODE_W) * i / (spokes.length - 1) : W * (i + 1) / (spokes.length + 1) });
   let out = "", badges = "";
   if (hubZone) for (const z of spokes) {
-    const d = pathFor(z.zone), ok = z.online;
-    out += `<path id="edge-${esc(z.zone)}" d="${d}" fill="none" stroke="${ok ? "var(--line)" : "var(--red)"}"
-      stroke-width="${ok ? 3 : 2}" ${ok ? "" : 'stroke-dasharray="6 6"'}/>`;
     const a = layout[z.zone], b = layout[hubZone.zone];
-    const mx = (a.x + b.x) / 2, my = (a.y + NODE_H / 2 + b.y - NODE_H / 2) / 2;
+    const y1 = a.y + NODE_H / 2, y2 = b.y - NODE_H / 2, my = (y1 + y2) / 2;
+    out += `<path data-edge="${esc(z.zone)}" d="M${a.x},${y1} C${a.x},${my} ${b.x},${my} ${b.x},${y2}" fill="none"
+      stroke="${z.online ? "var(--line)" : "var(--red)"}" stroke-width="${z.online ? 3 : 2}" ${z.online ? "" : 'stroke-dasharray="6 6"'}/>`;
     if (z.via_proxy || (s.role === "spoke" && z.zone === s.zone && s.hub && s.hub.proxy)) {
-      badges += `<g><rect x="${mx - 30}" y="${my - 12}" width="60" height="24" rx="6" fill="var(--amber-soft)"
-        stroke="var(--amber)" stroke-width="1"/><text x="${mx}" y="${my + 4.5}" text-anchor="middle"
-        font-size="12" font-weight="600" fill="var(--amber)">proxy</text></g>`;
+      const mx = (a.x + b.x) / 2;
+      badges += `<rect x="${mx - 30}" y="${my - 12}" width="60" height="24" rx="6" fill="var(--amber-soft)" stroke="var(--amber)"/>
+        <text x="${mx}" y="${my + 4.5}" text-anchor="middle" font-size="12" font-weight="600" fill="var(--amber)">proxy</text>`;
     }
   }
-  out += `<g id="packets"></g>` + badges;  // packets pass under the proxy badge
+  out += `<g class="packets"></g>` + badges;  // messages pass under the proxy badge
   for (const z of Object.values(zones)) {
     const p = layout[z.zone]; if (!p) continue;
     const hub = z.role === "hub", x = p.x - NODE_W / 2, y = p.y - NODE_H / 2;
+    const ink = hub ? "var(--hub-ink)" : "var(--muted)", op = hub ? .75 : 1;
     const sub = hub ? "hub · accepts connections" : z.zone === s.zone && s.role === "spoke" ? "spoke · this zone" : "spoke · outbound only";
-    const poll = !hub && z.last_poll_s !== undefined && z.last_poll_s !== null ? `polled ${z.last_poll_s.toFixed(1)} s ago` : "";
-    const box = hub ? (s.role === "hub" ? "mailboxes for " + spokes.length + " spokes" : "")
-      : !z.online ? "offline" : z.queued !== undefined ? `mailbox: ${z.queued} queued · ${z.inflight} in flight` : "";
-    const sub2 = hub ? "" : box;
-    out += `<g><rect x="${x}" y="${y}" width="${NODE_W}" height="${NODE_H}" rx="14"
-      fill="${hub ? "var(--hub)" : "var(--node)"}" stroke="${hub ? "var(--hub)" : z.online ? "var(--line)" : "var(--red)"}" stroke-width="1.5"/>
+    const poll = !hub && z.last_poll_s != null ? ` · polled ${z.last_poll_s.toFixed(1)} s ago` : "";
+    const line3 = hub ? (s.role === "hub" ? `mailboxes for ${spokes.length} spokes` : "")
+      : !z.online ? "offline: not polling the hub" : z.queued !== undefined ? `mailbox: ${z.queued} queued · ${z.inflight} in flight` : "";
+    out += `<rect x="${x}" y="${y}" width="${NODE_W}" height="${NODE_H}" rx="14" fill="${hub ? "var(--hub)" : "var(--node)"}"
+        stroke="${hub ? "var(--hub)" : z.online ? "var(--line)" : "var(--red)"}" stroke-width="1.5"/>
       <circle cx="${x + 18}" cy="${y + 22}" r="4.5" fill="${z.online ? "var(--green)" : "var(--red)"}"/>
       <text x="${x + 30}" y="${y + 27}" font-size="17" font-weight="700" fill="${hub ? "var(--hub-ink)" : "var(--ink)"}">${esc(z.zone)}</text>
-      <text x="${x + 14}" y="${y + 48}" font-size="11.5" fill="${hub ? "var(--hub-ink)" : "var(--muted)"}" opacity="${hub ? .75 : 1}">${esc(sub)}</text>
-      <text x="${x + 14}" y="${y + 66}" font-size="11.5" fill="${hub ? "var(--hub-ink)" : "var(--muted)"}" opacity="${hub ? .75 : 1}">${z.agents.length} agents${poll ? " · " + poll : ""}</text>
-      <text x="${x + 14}" y="${y + 84}" font-size="11.5" fill="${z.online ? (hub ? "var(--hub-ink)" : "var(--muted)") : "var(--red)"}" opacity="${hub ? .75 : 1}">${esc(hub ? box : sub2)}</text></g>`;
+      <text x="${x + 14}" y="${y + 48}" font-size="11.5" fill="${ink}" opacity="${op}">${esc(sub)}</text>
+      <text x="${x + 14}" y="${y + 66}" font-size="11.5" fill="${ink}" opacity="${op}">${z.agents.length} agents${poll}</text>
+      <text x="${x + 14}" y="${y + 84}" font-size="11.5" fill="${z.online ? ink : "var(--red)"}" opacity="${op}">${esc(line3)}</text>`;
   }
-  if (!hubZone) out += `<text x="${W / 2}" y="230" text-anchor="middle" fill="var(--muted)" font-size="13">standalone zone: no hub</text>`;
+  if (!hubZone) out += `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="var(--muted)" font-size="13">standalone zone: no hub</text>`;
   svg.innerHTML = out;
-  $("topoNote").textContent = s.role === "hub" ? "spokes long-poll the hub; nothing connects into a spoke" :
-    s.role === "spoke" ? "this zone only makes outbound calls" : "";
+  const note = $("topoNote");
+  if (note) note.textContent = s.role === "hub" ? "spokes long-poll the hub; nothing connects into a spoke" : s.role === "spoke" ? "this zone only makes outbound calls" : "";
+}
+
+function newTraffic(s) {
+  if (!s.traffic) return [];
+  const prev = lastTraffic;
+  lastTraffic = s.traffic.length ? s.traffic[s.traffic.length - 1].t : (lastTraffic ?? 0);
+  return prev === null ? [] : s.traffic.filter((m) => m.t > prev);
 }
 
 function launchPackets(msgs) {
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (!topoSvg || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const hubZone = Object.keys(layout).find((z) => layout[z].y > 200);
   msgs.slice(-24).forEach((m, i) => {
     const legs = [];
     if (m.from_zone !== hubZone) legs.push({ edge: m.from_zone, reverse: false });
     if (m.to_zone !== hubZone) legs.push({ edge: m.to_zone, reverse: true });
-    if (!legs.length) return;
-    packets.push({ legs, family: family(m.type), reply: m.kind === "reply", start: performance.now() + i * 70,
-                   big: m.bytes > 50000 });
+    if (legs.length) packets.push({ legs, fam: family(m.type), reply: m.kind === "reply", start: performance.now() + i * 70, big: m.bytes > 50000 });
   });
 }
 
 function animate(now) {
-  const g = document.getElementById("packets");
+  const g = topoSvg && topoSvg.querySelector(".packets");
   if (g) {
-    const LEG_MS = 650;
-    packets = packets.filter((p) => now - p.start < p.legs.length * LEG_MS);
+    const LEG = 650;
+    packets = packets.filter((p) => now - p.start < p.legs.length * LEG);
     let html = "";
     for (const p of packets) {
       const t = now - p.start; if (t < 0) continue;
-      const leg = p.legs[Math.min(Math.floor(t / LEG_MS), p.legs.length - 1)];
-      const path = document.getElementById("edge-" + leg.edge); if (!path) continue;
-      let f = (t % LEG_MS) / LEG_MS; f = f < .5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2;
-      const len = path.getTotalLength(), pt = path.getPointAtLength((leg.reverse ? f : 1 - f) * len);
-      const c = COLOR[p.family], r = p.big ? 8 : 5.5;
+      const leg = p.legs[Math.min(Math.floor(t / LEG), p.legs.length - 1)];
+      const path = topoSvg.querySelector(`path[data-edge="${CSS.escape(leg.edge)}"]`); if (!path) continue;
+      let f = (t % LEG) / LEG; f = f < .5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2;
+      const pt = path.getPointAtLength((leg.reverse ? f : 1 - f) * path.getTotalLength());
+      const c = FAM[p.fam][0], r = p.big ? 8 : 5.5;
       html += p.reply ? `<circle cx="${pt.x}" cy="${pt.y}" r="${r}" fill="var(--card)" stroke="${c}" stroke-width="2.5"/>`
                       : `<circle cx="${pt.x}" cy="${pt.y}" r="${r}" fill="${c}"/>`;
     }
@@ -361,89 +503,354 @@ function animate(now) {
   requestAnimationFrame(animate);
 }
 
-// --- federated learning
+// ------------------------------------------------------------------ chart helpers
+function niceStep(raw) {
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  return [1, 2, 2.5, 5, 10].map((m) => m * mag).find((v) => v >= raw);
+}
+
+function lineChart(series, { yFmt = fmtPct0, yMin = null, yMax = null, H = 190, xLabel = "round", tipFmt = fmtPct } = {}) {
+  const W = 560, L = 48, R = 14, T = 16, B = 30;
+  const pts = series.flatMap((s) => s.points);
+  if (!pts.length) return `<div class="empty">No rounds yet.</div>`;
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(Math.max(...xs), x0 + 1);
+  let lo = Math.min(...ys), hi = Math.max(...ys);
+  if (yMin !== null) lo = Math.min(lo, yMin);
+  if (hi - lo < 1e-9) { hi += 0.05 * (Math.abs(hi) || 1); lo -= 0.05 * (Math.abs(lo) || 1); }
+  const step = niceStep((hi - lo) / 4);
+  lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  if (yMin !== null) lo = Math.max(lo, yMin);
+  if (yMax !== null) hi = Math.min(hi, yMax);
+  const x = (v) => L + (W - L - R) * (v - x0) / (x1 - x0), y = (v) => T + (H - T - B) * (1 - (v - lo) / (hi - lo || 1));
+  let g = "";
+  for (let v = lo; v <= hi + step / 2; v += step) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/>
+    <text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${yFmt(v)}</text>`;
+  const xstep = Math.max(1, Math.ceil((x1 - x0 + 1) / 10));
+  for (let v = x0; v <= x1; v += xstep) g += `<text x="${x(v)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="var(--muted)">${v}</text>`;
+  for (const s of series) {
+    if (!s.points.length) continue;
+    const poly = s.points.map((p) => `${x(p[0])},${y(p[1])}`).join(" ");
+    if (s.area) g += `<polygon points="${x(s.points[0][0])},${y(lo)} ${poly} ${x(s.points[s.points.length - 1][0])},${y(lo)}" fill="${s.color}" opacity=".08"/>`;
+    g += `<polyline points="${poly}" fill="none" stroke="${s.color}" stroke-width="2.2" stroke-linejoin="round"/>`;
+    if (s.points.length <= 40) g += s.points.map((p) => `<circle cx="${x(p[0])}" cy="${y(p[1])}" r="3" fill="var(--card)" stroke="${s.color}" stroke-width="2"><title>${esc(s.name)} · ${xLabel} ${p[0]}: ${tipFmt(p[1])}</title></circle>`).join("");
+    if (s.label) { const p = s.points[s.points.length - 1];
+      g += `<text x="${Math.min(x(p[0]), W - R)}" y="${y(p[1]) - 9}" text-anchor="end" font-size="12" font-weight="650" fill="${s.color}">${tipFmt(p[1])}</text>`; }
+  }
+  const leg = series.length > 1 ? `<div class="legend" style="margin-top:6px">${series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join("")}</div>` : "";
+  return `<svg viewBox="0 0 ${W} ${H}" role="img">${g}</svg>${leg}`;
+}
+
+function stackedBars(bars, keys, { W = 560, H = 190, yFmt = fmtPct0, yMax = 1, xLabel = "round", tipFmt = fmtPct } = {}) {
+  const L = 48, R = 14, T = 14, B = 30;
+  if (!bars.length) return `<div class="empty">No rounds yet.</div>`;
+  const n = bars.length, gap = (W - L - R) / n, bw = Math.max(3, Math.min(34, gap * .72));
+  const y = (v) => T + (H - T - B) * (1 - v / yMax);
+  let g = "";
+  for (let k = 0; k <= 4; k++) { const v = yMax * k / 4;
+    g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${yFmt(v)}</text>`; }
+  bars.forEach((b, i) => {
+    const cx = L + gap * (i + .5); let acc = 0;
+    for (const part of b.parts) {
+      if (!(part.value > 0)) continue;
+      const h = y(acc) - y(acc + part.value);
+      g += `<rect x="${cx - bw / 2}" y="${y(acc + part.value)}" width="${bw}" height="${Math.max(0.5, h - (h > 3 ? 1 : 0))}" rx="2" fill="${part.color}"><title>${esc(part.name)} · ${xLabel} ${b.x}: ${tipFmt(part.value)}</title></rect>`;
+      acc += part.value;
+    }
+    if (b.mark) g += `<text x="${cx}" y="${y(acc) - 5}" text-anchor="middle" font-size="12" fill="var(--red)" font-weight="700">${esc(b.mark)}</text>`;
+    if (b.x !== "" && (n <= 12 || i % Math.ceil(n / 10) === 0 || b.always)) g += `<text x="${cx}" y="${H - 10}" text-anchor="middle" font-size="11" fill="var(--muted)">${esc(b.x)}</text>`;
+  });
+  const leg = keys.length ? `<div class="legend" style="margin-top:6px">${keys.map(([nm, c]) => `<span><i style="background:${c}"></i>${esc(nm)}</span>`).join("")}</div>` : "";
+  return `<svg viewBox="0 0 ${W} ${H}" role="img">${g}</svg>${leg}`;
+}
+
+// a left-to-right flow of numbered boxes; `hl` highlights one box
+function flow(id, boxes, { W = 1100, H = 170, hl = -1, arrows = null } = {}) {
+  const n = boxes.length, gap = 30, bw = (W - gap * (n - 1) - 4) / n, by = 30, bh = H - 44, mk = "ah-" + id;
+  $(id).setAttribute("viewBox", `0 0 ${W} ${H}`);
+  let g = `<defs><marker id="${mk}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--faint)"/></marker></defs>`;
+  boxes.forEach((b, i) => {
+    const x = 2 + i * (bw + gap), on = i === hl;
+    const fill = b.dark ? "var(--hub)" : b.fill || (on ? "var(--accent-soft)" : "var(--soft)");
+    const stroke = b.dark ? "var(--hub)" : b.stroke || (on ? "var(--accent)" : "var(--line)");
+    const ink = b.dark ? "var(--hub-ink)" : "var(--ink)", sub = b.dark ? "var(--hub-ink)" : "var(--muted)";
+    g += `<rect x="${x}" y="${by}" width="${bw}" height="${bh}" rx="12" fill="${fill}" stroke="${stroke}" stroke-width="${on ? 2.5 : 1.2}"/>
+      <text x="${x + 2}" y="${by - 10}" font-size="11.5" font-weight="700" fill="var(--faint)">${i + 1}${on ? " · now" : ""}</text>
+      <text x="${x + 12}" y="${by + 26}" font-size="14.5" font-weight="650" fill="${ink}">${esc(b.title)}</text>`;
+    (b.lines || []).forEach((ln, k) => g += `<text x="${x + 12}" y="${by + 50 + k * 18}" font-size="12" fill="${sub}" opacity="${b.dark ? .8 : 1}">${esc(ln)}</text>`);
+    if (i < n - 1) { const ax = x + bw + 3;
+      g += `<line x1="${ax}" y1="${by + bh / 2}" x2="${ax + gap - 6}" y2="${by + bh / 2}" stroke="var(--faint)" stroke-width="1.6" marker-end="url(#${mk})"/>`;
+      if (arrows && arrows[i]) g += `<text x="${ax + gap / 2 - 2}" y="${by + bh / 2 - 8}" text-anchor="middle" font-size="10.5" fill="var(--muted)">${esc(arrows[i])}</text>`; }
+  });
+  return g;
+}
+
+// ------------------------------------------------------------------ overview
+function renderFLCard(s) {
+  const el = $("fl-overview"), j = currentJob(s);
+  if (!j || !j.status) { el.innerHTML = `<div class="empty">${j ? esc(j.error || "no status") : "No aggregator in the directory yet."}</div>`; return; }
+  const st = j.status, hist = st.history || [], metric = metricOf(hist), last = hist[hist.length - 1];
+  const pending = (st.pending || []).length;
+  el.innerHTML = `<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap"><b style="font-size:17px">${esc(j.job)}</b>
+      <span class="badge s-${esc(st.state)}">${esc(st.state.replaceAll("_", " "))}</span><span class="msg">aggregator ${esc(j.agent)}@${esc(j.zone)}</span></div>
+    <div class="kpis"><div><div class="k">round</div><div class="v num">${st.round}<span class="msg"> / ${st.rounds}</span></div></div>
+      <div><div class="k">${esc(metric ? metric.replaceAll("_", " ") : "metric")}</div><div class="v num">${last && metric ? fmtPct(last[metric]) : "–"}</div></div>
+      <div><div class="k">clients</div><div class="v num">${last ? last.clients.length : 0}<span class="msg"> / ${j.clients.length}</span></div></div></div>
+    <div class="bar"><div style="width:${st.rounds ? 100 * st.round / st.rounds : 0}%"></div></div>
+    ${metric ? lineChart([{ name: metric, color: "var(--accent)", area: true, label: true, points: hist.map((h) => [h.round, h[metric]]) }], { yMax: 1, H: 170 }) : ""}
+    ${pending ? `<p style="margin:10px 0 0"><span class="chip warn">${pending} request${pending > 1 ? "s" : ""} waiting for approval</span> <a href="#learning">review →</a></p>` : ""}`;
+}
+
+function renderRate(el, s, H, W) {
+  if (!s.rate) { el.innerHTML = `<div class="empty">Only the hub sees traffic between zones.</div>`; return; }
+  const now = Math.floor(s.t), by = Object.fromEntries(s.rate.map((r) => [r[0], r]));
+  const bars = [];
+  for (let sec = now - 119; sec <= now; sec += 4) {  // 30 buckets of 4 s
+    const sum = [0, 0, 0];
+    for (let k = 0; k < 4; k++) { const r = by[sec + k]; if (r) { sum[0] += r[1]; sum[1] += r[2]; sum[2] += r[3]; } }
+    const ago = now - sec - 3;
+    bars.push({ x: ago % 20 === 0 || ago < 4 ? (ago < 4 ? "now" : "−" + ago + "s") : "", always: true,
+      parts: [["federated learning", sum[0] / 4, FAM.fl[0]], ["Proxy Doctor", sum[1] / 4, FAM.pd[0]], ["other", sum[2] / 4, FAM.other[0]]]
+        .map(([name, value, color]) => ({ name, value, color })) });
+  }
+  const max = Math.max(...bars.map((b) => b.parts.reduce((a, p) => a + p.value, 0)), 0.5);
+  const yMax = niceStep(max * 1.1 / 4) * 4;
+  el.innerHTML = stackedBars(bars, Object.values(FAM).map(([c, n]) => [n, c]),
+      { W, H, yMax, yFmt: (v) => (v < 10 ? v.toFixed(1) : v.toFixed(0)) + "/s", tipFmt: (v) => v.toFixed(2) + " messages/s", xLabel: "at" }) +
+    `<p class="msg" style="margin:6px 0 0">Averaged over 4 s. Includes the dashboard's own status messages (“other”).</p>`;
+}
+
+function renderEvents(el, s, n) {
+  const evs = s.events.filter((e) => !(e.kind === "message" && (s.role === "hub" || /^dashboard@/.test(e.msg)))).slice(-n).reverse();
+  el.innerHTML = evs.length ? evs.map((e) => `<div class="ev ${esc(e.kind)}"><span class="t num">${fmtTime(e.t)}</span>
+    <span class="kind">${esc(e.kind)}</span><span>${esc(e.msg)}</span></div>`).join("") : `<div class="empty">No events.</div>`;
+}
+
+// ------------------------------------------------------------------ network
+function renderSpokes(s, zones) {
+  const spokes = Object.values(zones).filter((z) => z.role === "spoke");
+  if (s.role !== "hub") { $("spokes").innerHTML = `<p class="msg">Hub <b>${esc(s.hub && s.hub.zone || "?")}</b> at ${esc(s.hub && s.hub.url)}:
+    ${s.hub && s.hub.connected ? "connected" : "not connected"}${s.hub && s.hub.proxy ? ", through a proxy" : ""}.</p>`; return; }
+  $("spokes").innerHTML = `<p class="explain">A spoke is <b>online</b> while it holds a long poll open or polled in the last 30 s.
+    Messages for an offline spoke are refused at once instead of waiting for a timeout.</p>
+    <div class="table-wrap"><table><thead><tr><th>zone</th><th>status</th><th>last poll</th><th>queued</th><th>in flight</th><th>route</th></tr></thead><tbody>
+    ${spokes.map((z) => `<tr><td><b>${esc(z.zone)}</b></td><td>${z.online ? '<span class="chip pd">online</span>' : '<span class="chip bad">offline</span>'}</td>
+      <td class="num">${z.last_poll_s == null ? "never" : z.last_poll_s.toFixed(1) + " s ago"}</td><td class="num">${z.queued ?? "–"}</td>
+      <td class="num">${z.inflight ?? "–"}</td><td>${z.via_proxy ? '<span class="chip warn">via proxy</span>' : "direct"}</td></tr>`).join("")}
+    </tbody></table></div>
+    <p class="msg" style="margin-top:10px"><b>In flight</b>: handed to the spoke, not acknowledged yet. After 30 s without an
+      acknowledgement a message goes back to <b>queued</b> and is delivered again; the spoke drops duplicates.</p>`;
+}
+
+function renderMsgFlow(s) {
+  const proxy = Object.values(s.spokes || {}).some((z) => z.via_proxy) || !!(s.hub && s.hub.proxy);
+  $("msgflow").innerHTML = flow("msgflow", [
+    { title: "agent in b", lines: ["POST /send to its", "own gateway"] },
+    { title: "gateway b", lines: ["signs the request", "with b's token"] },
+    proxy ? { title: "proxy", lines: ["b's only way out;", "can read, not change"], fill: "var(--amber-soft)", stroke: "var(--amber)" }
+          : { title: "network", lines: ["outbound HTTP", "from b"] },
+    { title: "hub az", lines: ["checks the signature,", "queues it for cn"], dark: true },
+    { title: "gateway cn", lines: ["waiting in a long poll:", "gets it, acks it"] },
+    { title: "agent in cn", lines: ["handles it; the reply", "returns the same way"] },
+  ]);
+}
+
+function renderRoutes(s) {
+  const el = $("routes");
+  if (!s.totals) { el.innerHTML = `<div class="empty">Only the hub sees traffic between zones.</div>`; return; }
+  const rows = Object.entries(s.totals).map(([k, v]) => ({ route: k.replace(">", " → "), ...v })).sort((a, b) => b.bytes - a.bytes);
+  const maxB = Math.max(1, ...rows.map((r) => r.bytes)), maxM = Math.max(1, ...rows.map((r) => r.messages));
+  const barCell = (v, max, color, label) => `<td style="width:38%"><div style="display:flex;gap:8px;align-items:center">
+    <div style="height:10px;border-radius:4px;background:${color};width:${(100 * v / max).toFixed(1)}%;min-width:2px"></div><span class="num msg">${label}</span></div></td>`;
+  el.innerHTML = rows.length ? `<p class="explain">Federated learning moves <b>model weights only</b>, so these bytes are
+    the whole cost of training across zones.</p><table><thead><tr><th>route</th><th>messages</th><th>data</th></tr></thead><tbody>${rows.map((r) =>
+    `<tr><td style="white-space:nowrap"><b>${esc(r.route)}</b></td>${barCell(r.messages, maxM, "var(--faint)", r.messages)}${barCell(r.bytes, maxB, "var(--accent)", fmtBytes(r.bytes))}</tr>`).join("")}
+    </tbody></table>` : `<div class="empty">No messages between zones yet.</div>`;
+}
+
+function renderTraffic(s, fresh) {
+  if (!s.traffic) { $("traffic").innerHTML = ""; $("trafficNote").textContent = "Only the hub sees traffic between zones. Open the hub's dashboard."; return; }
+  const show = $("showDash").checked, freshSet = new Set(fresh);
+  const rows = s.traffic.filter((m) => show || !isDash(m)).slice(-120).reverse();
+  $("traffic").innerHTML = rows.length ? rows.map((m) => `<tr class="${m.kind === "reply" ? "reply" : ""}${freshSet.has(m) ? " fresh" : ""}">
+      <td class="t num">${fmtTime(m.t)}</td>
+      <td>${esc(m.from_agent || "?")}<span class="msg">@${esc(m.from_zone)}</span><span class="arrow">→</span>${esc(m.to_agent || "?")}<span class="msg">@${esc(m.to_zone)}</span></td>
+      <td>${m.kind === "reply" ? `<span class="msg">reply${m.status ? " · " + esc(m.status) : ""}</span>` :
+        m.type ? `<span class="chip ${family(m.type) === "other" ? "" : family(m.type)}">${esc(m.type)}</span>` : `<span class="msg">message</span>`}</td>
+      <td class="r num">${fmtBytes(m.bytes)}</td></tr>`).join("") : `<tr><td colspan="4"><div class="empty">No messages between zones yet.</div></td></tr>`;
+  const hidden = s.traffic.filter(isDash).length;
+  $("trafficNote").textContent = "Message type and size only; the hub never records payloads." + (hidden && !show ? ` ${hidden} dashboard status messages hidden.` : "");
+}
+
+// ------------------------------------------------------------------ learning
 function metricOf(history) {
   const keys = history.length ? Object.keys(history[history.length - 1]) : [];
-  return ["test_acc", "global_acc", "accuracy", "acc"].find((k) => keys.includes(k)) ||
-         keys.find((k) => /acc/.test(k) && !k.startsWith("client_")) || keys.find((k) => /acc/.test(k));
+  return ["test_acc", "global_acc", "accuracy", "acc"].find((k) => keys.includes(k)) || keys.find((k) => /acc/.test(k) && !k.startsWith("client_"));
+}
+function clientMetricOf(history) {
+  const m = {};
+  for (const h of history) for (const c of h.contrib || []) Object.assign(m, c.metrics || {});
+  const keys = Object.keys(m);
+  return ["val_acc", "local_acc", "acc", "accuracy"].find((k) => keys.includes(k)) || keys.find((k) => /acc/.test(k));
 }
 
-function renderFL(s) {
-  const jobs = s.fl || [];
-  if (!jobs.length) { $("fl").innerHTML = `<div class="empty">No aggregator in the directory yet.</div>`; $("jobPick").innerHTML = ""; return; }
-  const ids = jobs.map((j) => j.job + "@" + j.zone);
-  if (!ids.includes(selectedJob)) selectedJob = ids[0];
-  $("jobPick").innerHTML = jobs.length > 1 ? `<select id="jobSel" aria-label="Job">${ids.map((id) =>
-    `<option${id === selectedJob ? " selected" : ""}>${esc(id)}</option>`).join("")}</select>` : "";
-  const sel = $("jobSel"); if (sel) sel.onchange = () => { selectedJob = sel.value; renderFL(snap); };
-  const j = jobs[ids.indexOf(selectedJob)], st = j.status;
-  const el = $("fl");
-  const keepRounds = ($("roundsIn") || {}).value;
-  if (!st) { el.innerHTML = `<div class="fl-head"><span class="job">${esc(j.job)}</span></div><p class="err">${esc(j.error || "no status")}</p>`; return; }
+function renderLearning(s) {
+  const j = currentJob(s);
+  $("fl-empty").hidden = !!j; $("fl-page").hidden = !j;
+  if (!j) return;
+  const ids = s.fl.map((x) => x.job + "@" + x.zone);
+  $("jobPick").innerHTML = s.fl.length > 1 ? `<select id="jobSel" aria-label="Job">${ids.map((id) => `<option${id === selectedJob ? " selected" : ""}>${esc(id)}</option>`).join("")}</select>` : "";
+  const sel = $("jobSel"); if (sel) sel.onchange = () => { selectedJob = sel.value; render(); };
+  const st = j.status;
+  if (!st) { $("fl-head").innerHTML = `<p class="err">${esc(j.error || "no status")}</p>`; return; }
   const hist = st.history || [], metric = metricOf(hist), last = hist[hist.length - 1];
-  const pct = st.rounds ? Math.min(100, 100 * st.round / st.rounds) : 0;
   const active = st.state === "running" || st.state === "waiting_for_clients";
-  el.innerHTML = `
-    <div class="fl-head"><span class="job">${esc(j.job)}</span><span class="badge s-${esc(st.state)}">${esc(st.state.replaceAll("_", " "))}</span>
-      <span class="where">aggregator ${esc(j.agent)}@${esc(j.zone)} · run ${st.run}</span></div>
-    <div class="bigline">
-      <div><div class="k">round</div><div class="v num">${st.round}<span class="msg"> / ${st.rounds}</span></div></div>
-      <div><div class="k">${esc(metric ? metric.replaceAll("_", " ") : "metric")}</div><div class="v num">${last && metric ? fmtPct(last[metric]) : "–"}</div></div>
-      <div><div class="k">clients last round</div><div class="v num">${last ? last.clients.length : 0}<span class="msg"> / ${j.clients.length} known</span></div></div>
-    </div>
-    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${st.rounds}" aria-valuenow="${st.round}"><div style="width:${pct}%"></div></div>
-    ${chart(hist, metric)}
-    <div class="chips" style="margin-top:10px">${j.clients.map((c) => {
-      const used = last && last.clients.includes(c);
-      return `<span class="chip${used ? " fl" : ""}" title="${used ? "took part in the last round" : "known client"}">${esc(c)}</span>`; }).join("")}</div>
-    ${st.error ? `<p class="err">${esc(st.error)}</p>` : ""}
-    <div class="controls">
-      <label class="msg" for="roundsIn">rounds</label><input id="roundsIn" type="number" min="1" max="500" value="${esc(keepRounds || st.rounds || 5)}">
-      <button class="primary" id="startBtn" ${active ? "disabled" : ""}>Start run</button>
-      <button id="stopBtn" ${active ? "" : "disabled"}>Stop</button>
-      <span class="msg" id="ctlMsg"></span>
-    </div>`;
-  $("startBtn").onclick = () => control(j, { type: "fl.start", rounds: parseInt($("roundsIn").value, 10) || undefined });
-  $("stopBtn").onclick = () => control(j, { type: "fl.stop" });
+  if (document.activeElement?.id !== "roundsIn") {  // don't redraw under the cursor
+    const keep = ($("roundsIn") || {}).value, msgNow = $("ctlMsg") ? $("ctlMsg").outerHTML : '<span class="msg" id="ctlMsg"></span>';
+    $("fl-head").innerHTML = `<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap"><b style="font-size:18px">${esc(j.job)}</b>
+        <span class="badge s-${esc(st.state)}">${esc(st.state.replaceAll("_", " "))}</span>
+        <span class="msg">aggregator ${esc(j.agent)}@${esc(j.zone)} · run ${st.run}${st.started_by ? " · started by " + esc(st.started_by) : ""}</span></div>
+      <div class="kpis"><div><div class="k">round</div><div class="v num">${st.round}<span class="msg"> / ${st.rounds}</span></div></div>
+        <div><div class="k">${esc(metric ? metric.replaceAll("_", " ") : "metric")}</div><div class="v num">${last && metric ? fmtPct(last[metric]) : "–"}</div></div>
+        <div><div class="k">clients last round</div><div class="v num">${last ? last.clients.length : 0}<span class="msg"> / ${j.clients.length} known</span></div></div>
+        <div><div class="k">size of one update</div><div class="v num">${last && last.bytes_per_update ? fmtBytes(last.bytes_per_update) : "–"}</div></div></div>
+      <div class="bar"><div style="width:${st.rounds ? 100 * st.round / st.rounds : 0}%"></div></div>
+      ${st.error ? `<p class="err">${esc(st.error)}</p>` : ""}
+      <div class="controls"><label class="msg" for="roundsIn">rounds</label>
+        <input id="roundsIn" type="number" min="1" max="${st.limits ? st.limits.max_rounds : 500}" value="${esc(keep || st.rounds || 5)}">
+        <button class="primary" id="startBtn" ${active ? "disabled" : ""}>Start run</button>
+        <button id="stopBtn" ${active ? "" : "disabled"}>Stop</button>${msgNow}</div>`;
+    $("startBtn").onclick = () => control(j, { type: "fl.start", rounds: parseInt($("roundsIn").value, 10) || undefined, reason: "started from the dashboard" });
+    $("stopBtn").onclick = () => control(j, { type: "fl.stop", reason: "stopped from the dashboard" });
+  }
+  renderControl(j, st);
+  renderLifecycle(st);
+  renderRoundFlow(j, st, last);
+  $("metricName").textContent = metric ? metric.replaceAll("_", " ") + ", measured by the aggregator" : "";
+  $("chart-global").innerHTML = metric ? lineChart([{ name: metric, color: "var(--accent)", area: true, label: true,
+    points: hist.map((h) => [h.round, h[metric]]) }], { yMax: 1 }) : `<div class="empty">Rounds will appear here.</div>`;
+  const cm = clientMetricOf(hist), clients = [...new Set(hist.flatMap((h) => (h.contrib || []).map((c) => c.client)))].sort();
+  clients.forEach(colorOf);
+  $("chart-clients").innerHTML = cm ? `<p class="explain"><b>${esc(cm.replaceAll("_", " "))}</b> on each client's own held-out
+    data, right after it trained. Clients with different data score differently; averaging lifts them all.</p>` +
+    lineChart(clients.map((c) => ({ name: c, color: colorOf(c), points: hist.flatMap((h) => (h.contrib || [])
+      .filter((x) => x.client === c && x.metrics && x.metrics[cm] != null).map((x) => [h.round, x.metrics[cm]])) })), { yMax: 1 })
+    : `<div class="empty">Clients report no accuracy metric.</div>`;
+  const legendKeys = clients.map((c) => [c, colorOf(c)]);
+  $("chart-shares").innerHTML = stackedBars(hist.map((h) => ({ x: h.round, mark: (h.contrib || []).some((c) => c.status !== "used") ? "✕" : "",
+    parts: clients.map((c) => { const e = (h.contrib || []).find((v) => v.client === c); return { name: c, value: e ? e.share || 0 : 0, color: colorOf(c) }; }) })), legendKeys);
+  $("ratioNote").textContent = st.limits && st.limits.max_update_ratio ? `limit: ${st.limits.max_update_ratio}× the median` : "check disabled";
+  $("chart-norms").innerHTML = lineChart(clients.map((c) => ({ name: c, color: colorOf(c), points: hist.flatMap((h) => (h.contrib || [])
+    .filter((x) => x.client === c && x.update_norm != null).map((x) => [h.round, x.update_norm])) })), { yMin: 0, yFmt: fmtNum, tipFmt: fmtNum });
+  $("chart-time").innerHTML = `<p class="explain">From sending the model to having all updates back, per round.</p>` +
+    stackedBars(hist.map((h) => ({ x: h.round, parts: [{ name: "round", value: h.seconds || 0, color: "var(--accent)" }] })), [],
+      { yMax: niceStep(Math.max(.2, ...hist.map((h) => h.seconds || 0)) * 1.1 / 4) * 4, yFmt: (v) => +v.toFixed(2) + " s", tipFmt: (v) => v.toFixed(2) + " s" });
+  renderContrib(last);
+  renderAudit(st);
 }
 
-function chart(hist, metric) {
-  const W = 520, H = 170, L = 38, R = 12, T = 12, B = 26;
-  if (!metric || !hist.length) return `<svg id="chart" viewBox="0 0 ${W} ${H}"><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="var(--muted)" font-size="13">rounds will appear here</text></svg>`;
-  const r0 = hist[0].round, r1 = Math.max(hist[hist.length - 1].round, r0 + 1), vals = hist.map((h) => h[metric]);
-  const span = 1 - Math.min(...vals), stepY = span > .5 ? .25 : span > .2 ? .1 : span > .08 ? .05 : .02;
-  const lo = Math.max(0, Math.floor((Math.min(...vals) - stepY / 2) / stepY) * stepY), hi = 1;
-  const x = (r) => L + (W - L - R) * (r - r0) / (r1 - r0), y = (v) => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
-  let g = "";
-  for (let v = lo; v <= hi + 1e-9; v += stepY) {
-    g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/>
-          <text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${Math.round(v * 100)}%</text>`;
+function renderControl(j, st) {
+  const L = st.limits || {}, pending = st.pending || [];
+  $("fl-control").innerHTML = `
+    <p class="explain"><b>Operators</b> (${(L.operators || []).map(esc).join(", ") || "none"}) start and stop runs directly.
+      Anyone else, such as an LLM agent using the MCP tools, can only send a <b>request</b>,
+      ${L.approval === "auto" ? "which runs at once (FL_APPROVAL=auto)." : "which waits here until an operator approves it."}</p>
+    ${pending.length ? pending.map((p) => `<div class="pending"><div class="what"><b>${esc(p.who)}</b> asks to <b>${esc(p.action)}</b>
+        ${p.rounds ? `a run of ${esc(p.rounds)} rounds` : ""}<br><span class="msg">“${esc(p.reason || "no reason given")}” · ${fmtTime(p.t)}</span></div>
+        <button class="ok" data-approve="${esc(p.id)}">Approve</button><button data-reject="${esc(p.id)}">Reject</button></div>`).join("")
+      : `<p class="msg">No requests waiting.</p>`}
+    <dl class="kv">
+      <dt>rounds per start</dt><dd>at most ${esc(L.max_rounds)}</dd>
+      <dt>between runs</dt><dd>${L.cooldown_s ? esc(L.cooldown_s) + " s cooldown" : "no cooldown"}</dd>
+      <dt>schedule</dt><dd>${L.schedule_s ? "a run every " + esc(L.schedule_s) + " s" : "off"}</dd>
+      <dt>zones in control</dt><dd>${(L.control_zones || []).length ? L.control_zones.map(esc).join(", ") : "all"}</dd>
+      <dt>a round counts with</dt><dd>${esc(st.min_fit_clients)} usable updates within ${esc(L.round_timeout_s)} s</dd>
+    </dl>`;
+  $("fl-control").querySelectorAll("[data-approve]").forEach((b) => b.onclick = () => control(j, { type: "fl.approve", id: b.dataset.approve }));
+  $("fl-control").querySelectorAll("[data-reject]").forEach((b) => b.onclick = () => control(j, { type: "fl.reject", id: b.dataset.reject, reason: "rejected from the dashboard" }));
+}
+
+function renderLifecycle(st) {
+  const S = { idle: [95, 55], waiting_for_clients: [345, 55], running: [595, 55], done: [880, 22], failed: [880, 84], stopped: [880, 146] };
+  const label = { idle: "idle", waiting_for_clients: "waiting for clients", running: "running", done: "done", failed: "failed", stopped: "stopped" };
+  const tip = { waiting_for_clients: `needs ${st.min_clients} clients in the directory`, running: `round ${st.round + 1 > st.rounds ? st.rounds : st.round + 1} of ${st.rounds}`,
+    done: "final model sent to clients", failed: st.error ? "too few usable updates" : "", stopped: "fl.stop" };
+  const bw = 180, bh = 38;
+  let g = `<defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--faint)"/></marker></defs>`;
+  const edge = (a, b, txt) => { const [x1, y1] = S[a], [x2, y2] = S[b], sx = x1 + bw / 2, ex = x2 - bw / 2 - 2;
+    g += `<path d="M${sx},${y1} C${(sx + ex) / 2},${y1} ${(sx + ex) / 2},${y2} ${ex},${y2}" fill="none" stroke="var(--faint)" stroke-width="1.5" marker-end="url(#ah2)"/>`;
+    if (txt) g += `<text x="${(sx + ex) / 2}" y="${Math.min(y1, y2) - 26}" text-anchor="middle" font-size="11" fill="var(--muted)">${txt}</text>`; };
+  edge("idle", "waiting_for_clients", "start");
+  edge("waiting_for_clients", "running", "enough clients");
+  edge("running", "done", ""); edge("running", "failed", ""); edge("running", "stopped", "");
+  const [rx, ry] = S.running, [wx] = S.waiting_for_clients;
+  g += `<path d="M${rx},${ry + bh / 2} C${rx},${ry + 85} ${wx},${ry + 85} ${wx},${ry + bh / 2 + 2}" fill="none" stroke="var(--faint)" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#ah2)"/>
+    <text x="${(rx + wx) / 2}" y="${ry + 80}" text-anchor="middle" font-size="11" fill="var(--muted)">next round: look the clients up again</text>
+    <text x="${S.idle[0]}" y="${S.idle[1] + bh / 2 + 34}" text-anchor="middle" font-size="11" fill="var(--muted)">fl.start by an operator,</text>
+    <text x="${S.idle[0]}" y="${S.idle[1] + bh / 2 + 49}" text-anchor="middle" font-size="11" fill="var(--muted)">an approved request,</text>
+    <text x="${S.idle[0]}" y="${S.idle[1] + bh / 2 + 64}" text-anchor="middle" font-size="11" fill="var(--muted)">or the schedule</text>`;
+  for (const [k, [x, y]] of Object.entries(S)) {
+    const on = st.state === k, bad = k === "failed" || k === "stopped";
+    const fill = on ? (bad ? "var(--red-soft)" : k === "done" ? "var(--green-soft)" : "var(--accent-soft)") : "var(--soft)";
+    const stroke = on ? (bad ? "var(--red)" : k === "done" ? "var(--green)" : "var(--accent)") : "var(--line)";
+    g += `<rect x="${x - bw / 2}" y="${y - bh / 2}" width="${bw}" height="${bh}" rx="19" fill="${fill}" stroke="${stroke}" stroke-width="${on ? 2.5 : 1}"/>
+      <text x="${x}" y="${y + 5}" text-anchor="middle" font-size="13.5" font-weight="${on ? 700 : 500}" fill="${on ? "var(--ink)" : "var(--muted)"}">${label[k]}</text>`;
+    if (on && tip[k] && !["done", "failed", "stopped"].includes(k)) g += `<text x="${x}" y="${y + bh / 2 + 15}" text-anchor="middle" font-size="11" font-weight="600" fill="var(--accent)">${esc(tip[k])}</text>`;
+    if (on && tip[k] && ["done", "failed", "stopped"].includes(k)) g += `<text x="${x}" y="${y + bh / 2 + 13}" text-anchor="middle" font-size="11" font-weight="600" fill="${stroke}">${esc(tip[k])}</text>`;
   }
-  const step = Math.ceil((r1 - r0 + 1) / 10);
-  for (let r = r0; r <= r1; r += step) g += `<text x="${x(r)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--muted)">${r}</text>`;
-  const pts = hist.map((h) => `${x(h.round)},${y(h[metric])}`).join(" ");
-  const area = `${x(hist[0].round)},${y(lo)} ${pts} ${x(hist[hist.length - 1].round)},${y(lo)}`;
-  const lastH = hist[hist.length - 1];
-  g += `<polygon points="${area}" fill="var(--accent)" opacity=".08"/>
-        <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-        ${hist.map((h) => `<circle cx="${x(h.round)}" cy="${y(h[metric])}" r="3.5" fill="var(--card)" stroke="var(--accent)" stroke-width="2"><title>round ${h.round}: ${fmtPct(h[metric])}</title></circle>`).join("")}
-        <text x="${Math.min(x(lastH.round), W - R - 2)}" y="${y(lastH[metric]) - 10}" text-anchor="${hist.length > 1 ? "end" : "middle"}" font-size="12" font-weight="650" fill="var(--accent)">${fmtPct(lastH[metric])}</text>`;
-  return `<svg id="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(metric)} per round">${g}</svg>`;
+  $("lifecycle").innerHTML = g;
+}
+
+function renderRoundFlow(j, st, last) {
+  const L = st.limits || {}, n = last ? (last.contrib || []).length : j.clients.length;
+  const kb = last && last.bytes_per_update ? fmtBytes(last.bytes_per_update) : "?";
+  $("roundflow").innerHTML = flow("roundflow", [
+    { title: "Send model", lines: [`fl.fit to ${n} clients,`, `${kb} each, via the hub`] },
+    { title: "Train locally", lines: ["on each client's own", "data; data stays put"] },
+    { title: "Collect updates", lines: [`need ${st.min_fit_clients} within ${L.round_timeout_s || "?"} s,`, "else retry the round"] },
+    { title: "Screen", lines: [L.max_samples ? `cap samples at ${L.max_samples};` : "check shapes, NaN;",
+      L.max_update_ratio ? `drop > ${L.max_update_ratio}× median size` : "no NaN or inf"] },
+    { title: "FedAvg", lines: ["w = Σ (nᵢ / N) · wᵢ", "weighted by samples"] },
+    { title: "Evaluate, save", lines: ["score the global model;", "save <job>-latest.npz"] },
+  ], { hl: st.state === "running" ? 1 : -1 });
+}
+
+function renderContrib(last) {
+  const el = $("contrib");
+  if (!last || !last.contrib) { el.innerHTML = `<div class="empty">No round yet.</div>`; return; }
+  el.innerHTML = `<p class="msg" style="margin-top:0">Round ${last.round}, ${last.seconds} s.</p><div class="table-wrap"><table><thead><tr><th>client</th><th>status</th>
+    <th style="text-align:right">samples</th><th style="text-align:right">share</th><th style="text-align:right">update size</th><th style="text-align:right">time</th></tr></thead><tbody>
+    ${last.contrib.map((c) => `<tr><td style="white-space:nowrap"><span class="dot" style="background:${colorOf(c.client)};border-radius:3px"></span> ${esc(c.client)}</td>
+      <td>${c.status === "used" ? '<span class="chip pd">used</span>' : `<span class="chip bad">${esc(c.status)}</span>`}
+        ${c.why ? `<div class="msg">${esc(c.why)}</div>` : ""}${c.claimed && c.claimed !== c.samples ? `<div class="msg">claimed ${c.claimed.toLocaleString()}, capped</div>` : ""}</td>
+      <td class="r num">${c.samples != null ? c.samples.toLocaleString() : "–"}</td><td class="r num">${c.share != null ? fmtPct(c.share) : "–"}</td>
+      <td class="r num">${c.update_norm != null ? fmtNum(c.update_norm) : "–"}</td><td class="r num">${c.seconds != null ? c.seconds + " s" : "–"}</td></tr>`).join("")}
+    </tbody></table></div>`;
+}
+
+function renderAudit(st) {
+  const rows = (st.audit || []).slice().reverse();
+  $("audit").innerHTML = rows.length ? rows.map((a) => {
+    const det = ["rounds", "reason", "why", "note", "requested_by", "via", "id"].filter((k) => a[k] != null).map((k) => `${k}: ${esc(a[k])}`).join(" · ");
+    const cls = /refused|rejected/.test(a.outcome) ? "bad" : /pending/.test(a.outcome) ? "warn" : "pd";
+    return `<tr><td class="t num">${fmtTime(a.t)}</td><td>${esc(a.who)}</td><td>${esc(a.action)}</td><td><span class="chip ${cls}">${esc(a.outcome)}</span></td><td class="msg">${det}</td></tr>`;
+  }).join("") : `<tr><td colspan="5"><div class="empty">Nothing yet.</div></td></tr>`;
 }
 
 async function control(j, payload) {
-  const msg = $("ctlMsg"); msg.textContent = "sending…"; msg.className = "msg";
+  const show = (text, cls) => { const m = $("ctlMsg"); if (m) { m.textContent = text; m.className = cls; } };
+  show("sending…", "msg");
   try {
     const r = await fetch("send", { method: "POST", headers: { ...HEADERS, "content-type": "application/json" },
       body: JSON.stringify({ from_agent: "dashboard-operator", target_zone: j.zone, target_agent: j.agent, payload, timeout: 20 }) });
     const body = await r.json();
     if (!r.ok || body.error) throw new Error(body.error || body.detail || "HTTP " + r.status);
-    msg.textContent = payload.type === "fl.start" ? "run started" : "run stopped";
+    show({ "fl.start": "run started", "fl.stop": "run stopped", "fl.approve": "approved", "fl.reject": "rejected" }[payload.type] + (body.note ? " (" + body.note + ")" : ""), "msg");
     setTimeout(refresh, 200);
-  } catch (e) { msg.textContent = e.message; msg.className = "err"; }
+  } catch (e) { show(e.message, "err"); }
 }
 
-// --- agents
+// ------------------------------------------------------------------ agents
 function renderZones(s, zones) {
   const docs = Object.fromEntries((s.doctors || []).map((d) => [d.zone + "/" + d.agent, d]));
   const order = Object.values(zones).sort((a, b) => (a.role === "hub" ? -1 : b.role === "hub" ? 1 : a.zone.localeCompare(b.zone)));
@@ -454,42 +861,51 @@ function renderZones(s, zones) {
         const extra = d && !d.error ? `<div class="x">${d.fixes} verified fix${d.fixes === 1 ? "" : "es"} · model: ${/npz$/.test(d.model || "") ? "federated" : esc(d.model || "?")}</div>` : "";
         return `<div class="agent"><div class="n">${esc(a.agent)}</div>${a.description ? `<div class="d">${esc(a.description)}</div>` : ""}
           <div class="chips">${a.capabilities.map((c) => `<span class="chip ${c.startsWith("fl-") ? "fl" : c === "proxy-doctor" ? "pd" : ""}">${esc(c)}</span>`).join("")}</div>${extra}</div>`;
-      }).join("") : `<div class="msg">no agents registered</div>`}
+      }).join("") : `<div class="msg">${z.online ? "no agents registered" : "offline: its agents are hidden until it polls again"}</div>`}
     </div>`).join("");
 }
 
-// --- traffic
-function renderTraffic(s) {
-  if (!s.traffic) {
-    $("traffic").innerHTML = ""; $("trafficNote").textContent = "Only the hub sees traffic between zones. Open the hub's dashboard.";
-    return;
-  }
-  const all = s.traffic, show = $("showDash").checked;
-  const lastT = lastTraffic;
-  const fresh = lastT === null ? [] : all.filter((m) => m.t > lastT);
-  lastTraffic = all.length ? all[all.length - 1].t : (lastTraffic ?? 0);
-  launchPackets(fresh.filter((m) => show || !isDash(m)));
-  const rows = all.filter((m) => show || !isDash(m)).slice(-120).reverse();
-  $("traffic").innerHTML = rows.length ? rows.map((m) => `
-    <tr class="${m.kind === "reply" ? "reply" : ""}${lastT !== null && m.t > lastT ? " fresh" : ""}">
-      <td class="t">${fmtTime(m.t)}</td>
-      <td class="route">${esc(m.from_agent || "?")}<span class="msg">@${esc(m.from_zone)}</span><span class="arrow">→</span>${esc(m.to_agent || "?")}<span class="msg">@${esc(m.to_zone)}</span></td>
-      <td>${m.kind === "reply" ? `<span class="msg">reply${m.status ? " · " + esc(m.status) : ""}</span>` :
-            m.type ? `<span class="chip ${family(m.type) === "other" ? "" : family(m.type)}">${esc(m.type)}</span>` : `<span class="msg">message</span>`}</td>
-      <td class="size">${fmtBytes(m.bytes)}</td></tr>`).join("")
-    : `<tr><td colspan="4"><div class="empty">No messages between zones yet.</div></td></tr>`;
-  const hidden = all.filter(isDash).length;
-  $("trafficNote").textContent = `Message type and size only; the hub dashboard never shows payloads.` +
-    (hidden && !show ? ` ${hidden} dashboard status messages hidden.` : "");
+function renderPdFlow(s) {
+  $("pdflow").innerHTML = flow("pdflow", [
+    { title: "Ask", lines: ["only from its own zone;", "others can only consult"] },
+    { title: "Diagnose", lines: ["MCP tools: proxy env,", "TLS, CA bundles, clock"] },
+    { title: "Classify", lines: ["small student model,", "federated if trained"] },
+    { title: "Unsure?", lines: ["consult the other zones", "with the observation only"], fill: "var(--teal-soft)", stroke: "var(--teal)" },
+    { title: "Apply, verify", lines: ["re-run the checks;", "dry run unless allowed"] },
+    { title: "Share", lines: ["verified fixes only;", "never auto-applied"], fill: "var(--teal-soft)", stroke: "var(--teal)" },
+  ]);
+  const docs = (s.doctors || []).filter((d) => !d.error);
+  const max = Math.max(1, ...docs.map((d) => d.fixes || 0));
+  $("pdfixes").innerHTML = docs.length ? `<table><thead><tr><th>zone</th><th>verified fixes it knows</th><th>classifier</th></tr></thead><tbody>
+    ${docs.map((d) => `<tr><td><b>${esc(d.zone)}</b></td><td style="width:50%"><div style="display:flex;gap:8px;align-items:center">
+      <div style="height:10px;border-radius:4px;background:var(--teal);width:${(100 * (d.fixes || 0) / max).toFixed(1)}%;min-width:2px"></div><span class="num msg">${d.fixes}</span></div></td>
+      <td>${/npz$/.test(d.model || "") ? '<span class="chip fl">federated</span>' : '<span class="chip">' + esc(d.model || "?") + "</span>"}</td></tr>`).join("")}
+    </tbody></table>` : `<p class="msg">No Proxy Doctor in the directory.</p>`;
 }
 
-function renderEvents(s) {
-  const evs = s.events.filter((e) => !(e.kind === "message" && (s.role === "hub" || /^dashboard@/.test(e.msg)))).reverse();
-  $("events").innerHTML = evs.length ? evs.map((e) => `<div class="ev ${esc(e.kind)}"><span class="t num">${fmtTime(e.t)}</span>
-    <span class="kind">${esc(e.kind)}</span><span>${esc(e.msg)}</span></div>`).join("") : `<div class="empty">No events.</div>`;
+// ------------------------------------------------------------------ security
+function renderSecFlow() {
+  $("secflow").innerHTML = flow("secflow", [
+    { title: "Spoke b signs", lines: ["HMAC(token, method, path,", "time, nonce, body)"] },
+    { title: "Request", lines: ["zone, time, nonce and", "signature as headers"] },
+    { title: "Proxy", lines: ["can read; any change", "breaks the signature"], fill: "var(--amber-soft)", stroke: "var(--amber)" },
+    { title: "Hub checks", lines: ["known zone, signature,", "time ±120 s, new nonce"], dark: true },
+    { title: "Hub answers", lines: ["signs the answer, tied", "to this request's nonce"], dark: true },
+    { title: "Spoke checks", lines: ["drops unsigned or", "replayed answers"] },
+  ]);
 }
 
-$("showDash").onchange = () => snap && renderTraffic(snap);
+function renderRejected(s) {
+  const rej = s.events.filter((e) => e.kind === "security").reverse();
+  $("rejected").innerHTML = (s.role === "hub" ? `<p class="explain">Requests the hub turned away: unknown zone, bad signature, old
+    timestamp or reused nonce. A spoke can also only act as itself: its messages always carry its own zone, and it can only answer
+    requests that were sent to it.</p>` : "") +
+    (rej.length ? rej.map((e) => `<div class="ev security"><span class="t num">${fmtTime(e.t)}</span><span class="kind">rejected</span><span>${esc(e.msg)}</span></div>`).join("")
+      : `<div class="empty">None so far.</div>`);
+}
+
+$("showDash").onchange = () => snap && render();
+go();
 refresh();
 setInterval(refresh, 1000);
 requestAnimationFrame(animate);

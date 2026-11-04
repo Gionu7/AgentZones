@@ -11,7 +11,8 @@ Talk to a zone (through its gateway, default http://127.0.0.1:8080 or $GATEWAY_U
   agentzone status | directory [-c CAPABILITY]
   agentzone send ZONE AGENT '{"type": "fl.status"}'
   agentzone ask proxy-doctor "pip fails with 407" [--simulate proxy_auth_required]
-  agentzone fl status|start|stop [--zone b --agent mnist-aggregator]
+  agentzone fl status|start|stop [--job mnist] [--rounds 5] [--reason "..."]
+  agentzone fl approve|reject --id ID [--job mnist]        decide on a pending fl.request
   agentzone token                   print a random token for SPOKE_TOKENS / HUB_TOKEN
 """
 
@@ -82,7 +83,9 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--simulate", help="Proxy Doctor: simulate a scenario instead of checking this machine")
     a.add_argument("--target")
     f = sub.add_parser("fl")
-    f.add_argument("action", choices=["status", "start", "stop"])
+    f.add_argument("action", choices=["status", "start", "stop", "approve", "reject"])
+    f.add_argument("--id", help="pending request id (approve / reject)")
+    f.add_argument("--reason", default="")
     f.add_argument("--zone", default="")
     f.add_argument("--agent", default="")
     f.add_argument("--job", default="", help="find the aggregator of this job in the directory")
@@ -134,7 +137,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"no aggregator with capability {cap} in the directory", file=sys.stderr)
                 return 1
             zone, agent = found[0]["zone"], found[0]["agent"]
-        payload = {"type": f"fl.{args.action}", **({"rounds": args.rounds} if args.rounds else {})}
+        payload = {"type": f"fl.{args.action}", **({"rounds": args.rounds} if args.rounds else {}),
+                   **({"id": args.id} if args.id else {}), **({"reason": args.reason} if args.reason else {})}
         return _send(args, zone, agent, payload)
     return 2
 

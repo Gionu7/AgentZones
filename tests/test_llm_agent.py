@@ -56,7 +56,7 @@ async def test_llm_agent_uses_mcp_and_zone_tools():
         await stack.enter_async_context(RunningServer(http_app(build_server(url)), mp))
         c = HttpMCPClient("zone", f"http://127.0.0.1:{mp}/mcp")
         await c.start()
-        assert {t.name for t in c.tools} == {"list_agents", "send_message"}
+        assert {"list_agents", "send_message", "fl_status"} <= {t.name for t in c.tools}
         text, err = await c.call_tool("list_agents", {"capability": "echo"})
         assert not err and json.loads(text)[0]["agent"] == "echo"
         text, err = await c.call_tool("send_message", {"zone": "solo", "agent": "echo", "payload": {"x": 1}})

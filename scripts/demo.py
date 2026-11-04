@@ -15,7 +15,9 @@ Story
   3. Consult         az hits the same problem, is unsure, consults the other zones and reuses b's fix.
   4. Federated       cn starts a run of the aggregator in b; clients in all three zones train the
                      Proxy Doctor model on their own data; no data leaves a zone.
-  5. Security        a spoke with the wrong token is turned away.
+  5. LLM request     an assistant asks for another run through the MCP tools; it waits until an
+                     operator approves it, and everything lands in the audit log.
+  6. Security        a spoke with the wrong token is turned away.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import json
 import logging
 import sys
 import tempfile
@@ -66,6 +69,7 @@ class Server:
 def port_or_free(port: int) -> int:
     import socket
     with socket.socket() as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # like uvicorn: TIME_WAIT is fine
         try:
             s.bind(("127.0.0.1", port))
             return port
@@ -124,7 +128,7 @@ async def main(keep: bool, rounds: int) -> int:
                         PD_PROFILE=PROFILES[z], FL_MODEL_OUT=str(model))
         await agent(stack, urls["b"], "pd-aggregator", "agentzones.fl.aggregator:FLAggregator",
                     FL_JOB="proxy-student", FL_STRATEGY="tasks.proxy_student:ProxyStudentStrategy",
-                    FL_ROUNDS=str(rounds), FL_MIN_CLIENTS="3", FL_AUTOSTART="0", FL_POLL_S="0.5",
+                    FL_ROUNDS=str(rounds), FL_MIN_CLIENTS="3", FL_AUTOSTART="0", FL_POLL_S="0.5", FL_MAX_ROUNDS="20",
                     FL_MODEL_DIR=str(work / "b" / "models"))
 
         h("1. Hub and spoke")
@@ -180,7 +184,31 @@ async def main(keep: bool, rounds: int) -> int:
             s = await send(urls[z], z, "proxy-doctor", {"type": "status"})
             print(f"  proxy-doctor@{z} now uses {DIM}{s['model']}{X}")
 
-        h("5. Security")
+        h("5. An LLM agent asks for more training (MCP tools); an operator decides")
+        from agentzones.mcp_gateway import build_server
+        mcp = build_server(urls["az"], name="assistant")  # what an LLM agent in az sees as MCP tools
+
+        def tool(name, **args):
+            res = mcp.call(name, args)
+            return json.loads(res["content"][0]["text"]) if not res["isError"] else {"error": res["content"][0]["text"]}
+        req = await asyncio.to_thread(tool, "fl_request_start", job="proxy-student", rounds=500,
+                                      reason="12 new verified 407 incidents since the last run")
+        print(f"  assistant@az: fl_request_start(rounds=500) -> pending {req['pending']}, state still {req['state']}")
+        r = await http.post(urls["az"] + "/send", json={"from_agent": "assistant", "target_zone": "b",
+                                                       "target_agent": "pd-aggregator", "payload": {"type": "fl.start"}})
+        print(f"  assistant@az sends fl.start directly -> {Y}{r.json()['error'][:60]}…{X}")
+        r = await send(urls["az"], "b", "pd-aggregator", {"type": "fl.approve", "id": req["pending"]})
+        print(f"  operator approves -> {G}run {r['run']} started{X}, rounds capped at {r['rounds']} ({r.get('note', '')})")
+        while (await send(urls["az"], "b", "pd-aggregator", {"type": "fl.status"}))["state"] != "done":
+            await asyncio.sleep(0.3)
+        st = await send(urls["az"], "b", "pd-aggregator", {"type": "fl.status"})
+        for a in st["audit"][-5:]:
+            print(f"  {DIM}audit{X} {a['who']:<22} {a['action']:<16} {a['outcome']}")
+        if keep:  # leave one waiting, so it can be approved on the dashboard
+            await asyncio.to_thread(tool, "fl_request_start", job="proxy-student", rounds=10,
+                                    reason="nightly retrain (approve me on the dashboard)")
+
+        h("6. Security")
         bad = HubClient(GatewaySettings(zone="b", role="spoke", hub_url=hub_url, hub_token="stolen-or-wrong"))
         try:
             await bad.call("GET", "/hub/directory")

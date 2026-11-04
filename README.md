@@ -34,8 +34,10 @@ zones, and **generic federated learning**, which trains a model across zones wit
 - A message from b to cn travels b → hub → cn, and the reply comes back the same way. No connection is ever
   opened *into* b or cn.
 - Spokes acknowledge every message they receive; anything not acknowledged within 30 s is delivered again,
-  and spokes drop duplicates. Agents re-register with their gateway every 10 s, so restarting a gateway, or the
-  hub, is harmless.
+  and spokes drop duplicates. A send that is retried after a lost response is routed only once. Agents
+  re-register with their gateway every 10 s, so restarting a gateway, or the hub, is harmless.
+- A spoke that stops polling for 30 s is **offline**: its agents leave the directory at once, and messages for
+  it are refused right away instead of waiting for a timeout.
 - Each spoke has its own token (`SPOKE_TOKENS` on the hub, `HUB_TOKEN` on the spoke). It is used as an HMAC
   key and never sent. A spoke can only fetch its own mailbox, can only answer requests that were sent to it,
   and cannot claim to be another zone. See [docs/SECURITY.md](docs/SECURITY.md).
@@ -78,10 +80,28 @@ mnist-aggregator:
   clients can join or leave between rounds.
 - Lifecycle of a run: `idle → waiting_for_clients → running → done | failed | stopped`. A round counts if at
   least `FL_MIN_FIT_CLIENTS` clients reply within `FL_ROUND_TIMEOUT_S`; a short round is retried
-  (`FL_MAX_ROUND_RETRIES`, default 3) before the run fails. Replies with the wrong parameter shapes, or with
-  NaN, are rejected.
-- Control messages for the aggregator: `fl.start {rounds?, resume?}`, `fl.stop`, `fl.status`. They can be
-  sent from any zone, unless `FL_CONTROL_ZONES` lists the zones that may start and stop a run.
+  (`FL_MAX_ROUND_RETRIES`, default 3) before the run fails.
+- Updates are screened before FedAvg: wrong parameter names or shapes and NaN are rejected; `FL_MAX_SAMPLES`
+  caps the sample count one client can claim; an update more than `FL_MAX_UPDATE_RATIO` (default 10) times
+  the median size is dropped. Each round's history records every client's share, update size and status.
+- The global model is evaluated by the strategy each round; clients' own metrics are kept per client too.
+
+### Who can start training
+
+| Who | How | What happens |
+|---|---|---|
+| Operators (`FL_OPERATORS`, default `operator,cli,dashboard-operator`) | `fl.start {rounds?}`, `fl.stop` | runs at once |
+| Anyone else, e.g. an LLM agent | MCP tools `fl_request_start(job, rounds, reason)`, `fl_request_stop(job, reason)`, or the message `fl.request` | waits as *pending* until an operator sends `fl.approve {id}` or `fl.reject {id}`, from the dashboard or `agentzone fl approve --id …`. `FL_APPROVAL=auto` skips the wait |
+| The aggregator itself | `FL_SCHEDULE_S` | starts a run every N seconds when idle |
+
+Hard limits, enforced by the aggregator whoever asks: at most `FL_MAX_ROUNDS` (50) rounds per start,
+`FL_COOLDOWN_S` between runs, and `FL_CONTROL_ZONES` for which zones may control a job. Every start, stop,
+request and decision goes to an audit log (in `fl.status` and `/models/<job>-audit.jsonl`) with who, when and
+the reason given. The zone MCP server also has `fl_list_jobs()` and `fl_status(job)`; no tool can choose a
+plugin, data or hyperparameters. The `assistant` LLM agent (`COMPOSE_PROFILES=llm`) gets these tools.
+
+Sender names are what the sending zone says they are, so the trust boundary is the zone: anyone with access to
+a zone's local API can act as an operator of that zone.
 - The global model is saved to `/models/<job>-latest.npz` with `<job>-latest.json` (the `models` volume in
   zone b). At the end of a run it is also sent to every client (`fl.model`); a client with `FL_MODEL_OUT`
   saves it.
@@ -114,12 +134,15 @@ Training the student and the small LLM is covered in [docs/DISTILLATION.md](docs
 Every gateway serves a live dashboard on its local API: **http://127.0.0.1:8080/** for the hub (b: 8081,
 cn: 8082). It needs nothing from the internet, so it also works on an offline VM.
 
-The hub's dashboard shows the whole network:
-- the zones, whether each spoke is polling, which ones go through a proxy, and their mailboxes;
-- messages crossing the hub as moving dots, colour-coded (federated learning, Proxy Doctor, replies);
-- every federated-learning job, with an accuracy chart, the clients in each round, and Start / Stop buttons;
-- the agents of all zones, with Proxy Doctor's verified fixes and whether it uses the federated model;
-- a log of what crossed the hub, and events such as rejected requests.
+The hub's dashboard has five pages, each with a diagram of how that part works:
+
+| Page | Shows |
+|---|---|
+| Overview | the zones with messages moving between them, the current FL job, messages per second, latest events |
+| Network | spokes (online, last poll, mailbox), how a message travels b → proxy → hub → cn, traffic per second and per route, the traffic log |
+| Learning | job controls and pending requests with Approve / Reject, the run lifecycle (current state lit), the steps of a round, global and per-client accuracy, each client's FedAvg share and update size, time per round, the audit log |
+| Agents | all agents by zone, the Proxy Doctor flow, verified fixes per zone and whether each doctor uses the federated model |
+| Security | how request signing works, what a proxy can and cannot do, rejected requests, all events |
 
 The hub only records each message's type and size, never its contents. A spoke's dashboard shows its own view:
 its hub connection, the directory and the FL jobs. If `ZONE_API_TOKEN` is set, open the page as
@@ -215,8 +238,9 @@ Other settings:
   `fl.fit` with `busy`.
 - The hub's mailboxes are in memory. If the hub restarts, messages in flight are lost; the senders time out and
   the aggregator skips that client for the round.
-- The MCP server (`list_agents`, `send_message`) can reach every agent in every zone. That is why its port is
-  published on `127.0.0.1` only.
+- The MCP server (`list_agents`, `send_message`, `fl_*`) can reach every agent in every zone. That is why its
+  port is published on `127.0.0.1` only. Its FL tools can only *request* training; an operator approves.
+- Hub requests are limited to 32 MB (`MAX_BODY` in gateway.py); raise it for large models.
 
 Details, including a traffic matrix: [docs/SECURITY.md](docs/SECURITY.md). Protocol and internals:
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Hackathon script: [docs/DEMO.md](docs/DEMO.md).

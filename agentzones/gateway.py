@@ -44,6 +44,7 @@ from .security import RequestVerifier, parse_tokens, sign_request, sign_response
 log = logging.getLogger(__name__)
 
 DEV_TOKEN_PREFIX = "dev-token-"
+MAX_BODY = 32_000_000  # largest hub request; FL updates of big models need a higher value
 
 
 @dataclass
@@ -414,6 +415,8 @@ def hub_app(gw: Gateway) -> FastAPI:
 
     async def authed(request: Request) -> tuple[str, str, bytes]:
         raw = await request.body()
+        if len(raw) > MAX_BODY:
+            raise HTTPException(413, f"message larger than {MAX_BODY // 1_000_000} MB")
         path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
         zone, reason = verifier.verify(request.method, path, raw, request.headers)
         if not zone:

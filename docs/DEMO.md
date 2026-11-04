@@ -29,7 +29,8 @@ COMPOSE_PROFILES=sim scripts/zone.sh b
 Add `COMPOSE_PROFILES=llm` (for example `COMPOSE_PROFILES=sim,llm` for b) to get Ollama and LLM-written
 explanations.
 
-Open the hub dashboard at http://127.0.0.1:8080/ and keep it on screen for the whole demo. With
+Open the hub dashboard at http://127.0.0.1:8080/ and keep it on screen for the whole demo. Its pages follow
+the story: Overview, Network, Learning, Agents, Security. With
 `scripts/demo.py --keep`, click *Start run* to replay federated learning live.
 
 ## Story
@@ -83,7 +84,12 @@ Open the hub dashboard at http://127.0.0.1:8080/ and keep it on screen for the w
    The fix is only applied on a simulated machine if the zone runs with `PD_AUTO_APPLY=1`. `scripts/demo.py`
    does that; the Docker zones only propose fixes by default.
 
-5. **Security.** Tokens never cross the proxy. A spoke with a wrong token is rejected and appears in red under
+5. **An LLM asks, a person decides.** `scripts/demo.py --keep` leaves a request from `assistant@az` waiting.
+   On the dashboard's *Learning* page, show the request with its reason, the limits, and the audit log, then
+   click **Approve** and watch the lifecycle diagram move to *running*. With Docker and `COMPOSE_PROFILES=llm`,
+   ask the `assistant` agent to retrain; it can only call `fl_request_start`.
+
+6. **Security.** Tokens never cross the proxy. A spoke with a wrong token is rejected and appears in red under
    *Rejected requests* and *Events*. A proxy that edits a message breaks its signature
    (`pytest tests/test_zones_e2e.py -k tampering`).
 

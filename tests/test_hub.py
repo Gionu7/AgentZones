@@ -10,7 +10,10 @@ def make_hub():
 
     async def local(msg):
         delivered.append(msg)
-    return Hub("az", ["b", "cn"], local, visibility_s=0.2), delivered
+    hub = Hub("az", ["b", "cn"], local, visibility_s=0.2)
+    for box in hub.mailboxes.values():  # both spokes are polling
+        box.last_poll = time.time()
+    return hub, delivered
 
 
 def req(mid, to_zone, **kw):
@@ -74,3 +77,25 @@ async def test_expired_messages_dropped_and_long_poll_wakes_on_new_mail():
     await asyncio.sleep(0.05)
     await hub.accept(req("new", "cn"), sender="b")
     assert [m["id"] for m in await asyncio.wait_for(waiter, 1)] == ["new"]
+
+
+async def test_offline_spoke_fails_fast_and_leaves_the_directory():
+    hub, _ = make_hub()
+    hub.register("cn", [{"agent": "echo", "capabilities": ["echo"]}])
+    assert [e["zone"] for e in hub.remote_entries()] == ["cn"]
+    hub.mailboxes["cn"].last_poll = time.time() - 60      # cn stopped polling
+    assert hub.remote_entries() == [] and not hub.zones()["cn"]["online"]
+    with pytest.raises(RoutingError, match="offline"):
+        await hub.accept(req("m1", "cn"), sender="b")
+
+
+async def test_retried_send_is_routed_once():
+    hub, delivered = make_hub()
+    await hub.accept(req("m1", "cn"), sender="b")
+    await hub.accept(req("m1", "cn"), sender="b")          # response was lost, b sent it again
+    assert len(await hub.poll("cn", 0)) == 1
+    reply = {"id": "r1", "kind": "reply", "reply_to": "m1", "payload": "ok"}
+    await hub.accept(reply, sender="cn")
+    await hub.accept(reply, sender="cn")                   # retried reply: no 403, not delivered twice
+    assert len(await hub.poll("b", 0)) == 1
+    assert hub.totals["b>cn"]["messages"] == 1 and sum(r[1] + r[2] + r[3] for r in hub.rate) == 2
