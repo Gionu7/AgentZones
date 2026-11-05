@@ -27,6 +27,17 @@ services:
       LABELS: ${CN_LABELS:-}
     volumes: [mnist-data:/data]
 
+  mnist-aggregator:
+    extends: { file: ../../zone/base.yml, service: fl-aggregator }
+    environment:
+      AGENT_NAME: mnist-aggregator
+      FL_JOB: mnist
+      FL_STRATEGY: tasks.mnist:MnistStrategy
+      FL_ROUNDS: ${FL_ROUNDS:-10}
+      FL_MIN_CLIENTS: ${FL_MIN_CLIENTS:-3}
+      FL_MIN_FIT_CLIENTS: ${FL_MIN_FIT_CLIENTS:-2}
+    volumes: [models:/models, aggregator-data:/data]
+
   proxy-doctor:
     extends: { file: ../../zone/base.yml, service: proxy-doctor }
     environment: { PD_PROFILE: k8s-cluster }
@@ -44,4 +55,4 @@ services:
 networks:
   agent-mesh: { external: true }
 
-volumes: { mnist-data: {}, pd-data: {}, ollama: {}, models-cache: {} }
+volumes: { mnist-data: {}, models: {}, aggregator-data: {}, pd-data: {}, ollama: {}, models-cache: {} }

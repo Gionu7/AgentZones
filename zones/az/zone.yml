@@ -1,5 +1,6 @@
 # Zone az: the HUB (Azure VM, the only zone that accepts incoming connections).
 #   scripts/zone.sh az
+#   COMPOSE_PROFILES=llm scripts/zone.sh az   adds a local model (Ollama), assistant and code-assistant
 # On the VM: export GATEWAY_BIND=0.0.0.0 ZONE_B_TOKEN=... ZONE_CN_TOKEN=...  and allow inbound TCP 9090.
 # Laptops join as spokes too: EXTRA_SPOKE_TOKENS=laptop-alice=<token>,... (then `agentzone laptop` on each).
 name: az

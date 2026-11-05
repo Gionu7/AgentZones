@@ -35,6 +35,8 @@ services:
     environment: *via-proxy
   assistant:
     environment: *via-proxy
+  code-assistant:
+    environment: *via-proxy
   ollama:
     environment: *via-proxy
   model-setup:
