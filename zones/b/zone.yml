@@ -1,6 +1,7 @@
 # Zone b: a SPOKE whose only way out is an HTTP proxy. It also runs the MNIST aggregator.
 #   scripts/zone.sh b                          real host: export HUB_URL, HUB_PROXY, HUB_TOKEN first
 #   COMPOSE_PROFILES=sim scripts/zone.sh b     one host: adds a squid proxy as b's only way out (sim.yml)
+#   COMPOSE_PROFILES=llm scripts/zone.sh b     adds a local model (Ollama), assistant and code-assistant
 name: b
 
 services:
@@ -45,6 +46,8 @@ services:
 
   assistant:
     extends: { file: ../../zone/base.yml, service: assistant }
+  code-assistant:   # CODE_DIR (default: this repository) is mounted read-only
+    extends: { file: ../../zone/base.yml, service: code-assistant }
   ollama:
     extends: { file: ../../zone/base.yml, service: ollama }
     volumes: [ollama:/root/.ollama]

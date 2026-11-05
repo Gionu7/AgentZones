@@ -179,8 +179,11 @@ Which agents you can ask, and what they do for other zones:
 
 <img src="docs/images/dashboard-ask.png" alt="The Ask page: Proxy Doctor in zone az answers an SSL question on a simulated machine, with its confidence per problem and the steps it took: checked the machine, classified, consulted zones b and cn, applied and verified the fix" width="900">
 
-`assistant` and `code-assistant` come with `COMPOSE_PROFILES=llm` (or `host-llm`); `code-assistant` is in zone az
-and reads this repository unless `CODE_DIR` says otherwise. On a laptop: `agentzone laptop --code ~/src/project`.
+`assistant` and `code-assistant` come with `COMPOSE_PROFILES=llm` (or `host-llm`); `code-assistant` is in zones az
+and b and reads this repository unless `CODE_DIR` says otherwise. Ask it on its own zone's dashboard (az:
+http://127.0.0.1:8080, b: http://127.0.0.1:8081) or with `agentzone ask`
+(see [Run locally with Docker](#run-locally-with-docker-all-three-zones-on-one-host)).
+On a laptop: `agentzone laptop --code ~/src/project`.
 `python scripts/demo.py --keep --llm` adds both to the demo, using Ollama on this machine. A chat is kept in the
 browser tab; each question sends the last turns along, so the agents themselves keep no state.
 
@@ -256,6 +259,13 @@ python -m agentzones.cli --gateway http://127.0.0.1:8080 fl start --job mnist --
 Other useful commands: `agentzone status`, `agentzone directory -c 'fl-client:*'`,
 `agentzone send b proxy-doctor '{"type": "status"}'`. Add `--gateway http://127.0.0.1:<port>` to pick the zone.
 
+Ask a zone's `code-assistant` about the code (zone started with `COMPOSE_PROFILES=llm`, or `sim,llm` for b).
+Inside the zone's gateway container this needs nothing installed on the host:
+
+```bash
+scripts/zone.sh b exec gateway agentzone --timeout 300 ask code-assistant "How does the hub decide that a spoke is offline?"
+```
+
 ## Deploy on real hosts
 
 | Zone | Before running `scripts/zone.sh <zone>` |
@@ -277,8 +287,9 @@ Other settings:
   unlimited made rounds about 250× slower.
 - `HOST_CA_BUNDLE` is a CA bundle that agents trust for HTTPS downloads behind a TLS-inspecting proxy.
   `AGENT_HTTPS_PROXY` is the proxy they use for those downloads. `MNIST_URL` can point at an internal mirror.
-- `COMPOSE_PROFILES=llm` adds Ollama and a generic `assistant` LLM agent to a zone; `host-llm` adds the
-  assistant on the host's model server. See [docs/MODELS.md](docs/MODELS.md).
+- `COMPOSE_PROFILES=llm` adds Ollama and the `assistant` LLM agent to a zone (and `code-assistant` in az and b);
+  `host-llm` runs them on the host's model server. Put it in `zones/<zone>/.env` to keep it on for that zone.
+  See [docs/MODELS.md](docs/MODELS.md).
 - `APT_PACKAGES=` builds the image without apt, if the build network cannot reach a Debian mirror.
 
 ## Security notes
