@@ -11,20 +11,28 @@ zones, and **generic federated learning**, which trains a model across zones wit
 
 ## Topology: hub and spoke
 
-```
-           zone cn (spoke)                    zone b (spoke)
-     outbound only, no incoming        outbound HTTP via proxy only
-          ┌──────────────┐              ┌────────────────────────┐
-          │ gateway      │              │ gateway ──► proxy ──┐   │
-          │ mnist-client │              │ mnist-client        │   │
-          │ proxy-doctor │              │ mnist-aggregator    │   │
-          └──────┬───────┘              │ proxy-doctor        │   │
-                 │ long-poll            └─────────────────────┼───┘
-                 ▼                                            ▼
-          ┌─────────────────────────────────────────────────────────┐
-          │ zone az (HUB, Azure, public :9090)                       │
-          │ gateway + mnist-client + proxy-doctor                    │
-          └─────────────────────────────────────────────────────────┘
+Arrows show who opens the connection. Every arrow points at the hub: nothing ever connects into b or cn.
+
+```mermaid
+flowchart TB
+  subgraph cn["zone cn: spoke"]
+    cngw["gateway"]
+    cnag["mnist-client<br/>proxy-doctor"]
+  end
+  subgraph b["zone b: spoke"]
+    bgw["gateway"]
+    bag["mnist-client<br/>mnist-aggregator<br/>proxy-doctor"]
+    bproxy[["HTTP proxy<br/>b's only way out"]]
+  end
+  subgraph az["zone az: HUB"]
+    hub["gateway + hub, port 9090<br/>mailbox per spoke<br/>directory of all agents"]
+    azag["mnist-client<br/>proxy-doctor"]
+  end
+  cnag <--> cngw
+  bag <--> bgw
+  azag <--> hub
+  cngw -- "long poll, replies (signed)" --> hub
+  bgw --> bproxy -- "long poll, replies (signed)" --> hub
 ```
 
 - **Hub** (`ROLE: hub`): keeps a mailbox for each spoke zone and the directory of agents in all zones.
@@ -61,6 +69,13 @@ live agent's name cannot be registered by another container, and a send is alway
 agent that sent it. See [docs/SECURITY.md](docs/SECURITY.md#agents-inside-a-zone).
 
 ## Generic federated learning
+
+<img src="docs/images/fl-why-federate.svg" alt="Bar chart: Proxy Doctor's classifier trained on one site's data scores 70 to 76% on problems from all sites; trained federated across az, b and cn it scores 97%" width="720">
+
+Each site's data covers mostly its own kind of problems, so a model trained on one site alone misses the
+others'. Trained federated across the three zones, it handles all of them, and no site shared its data. The
+numbers come from real runs of the plugins: `python scripts/make_doc_charts.py` (details and per-round charts in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#federated-learning)).
 
 The agents in `agentzones/fl/` only do communication and the training lifecycle. Everything specific to a
 model is a plugin:
@@ -138,6 +153,8 @@ Training the student and the small LLM is covered in [docs/DISTILLATION.md](docs
 
 ## Dashboard
 
+<img src="docs/images/dashboard-overview.png" alt="The hub dashboard's Overview page: the three zones with messages moving between them, the current federated-learning job with its accuracy chart, messages per second and the latest events" width="900">
+
 Every gateway serves a live dashboard on its local API: **http://127.0.0.1:8080/** for the hub (b: 8081,
 cn: 8082). It needs nothing from the internet, so it also works on an offline VM.
 
@@ -159,6 +176,8 @@ Which agents you can ask, and what they do for other zones:
 | `assistant` (LLM) | the local model with the zone's tools (Proxy Doctor's, FL requests) | the model only; tools listed in `LLM_REMOTE_TOOLS` |
 | `code-assistant` (LLM) | reads the code in `CODE_DIR` (read-only MCP server: list, search, read) | the model only, unless `CODE_REMOTE_TOOLS=code.*` |
 | `proxy-doctor` | checks the machine (or a simulated one), consults other zones, proposes a fix | advice from the question's text and its verified fixes; no checks |
+
+<img src="docs/images/dashboard-ask.png" alt="The Ask page: Proxy Doctor in zone az answers an SSL question on a simulated machine, with its confidence per problem and the steps it took: checked the machine, classified, consulted zones b and cn, applied and verified the fix" width="900">
 
 `assistant` and `code-assistant` come with `COMPOSE_PROFILES=llm` (or `host-llm`); `code-assistant` is in zone az
 and reads this repository unless `CODE_DIR` says otherwise. On a laptop: `agentzone laptop --code ~/src/project`.
@@ -307,4 +326,5 @@ complete federated-learning run.
 | `tasks/` | FL plugins (MNIST, Proxy Doctor student) |
 | `proxy_doctor/` | Proxy Doctor: diagnostics, MCP server, student model, distillation |
 | `zone/base.yml`, `zones/*/zone.yml`, `scripts/zone.sh` | the zones |
+| `scripts/make_doc_charts.py` | regenerates the charts in `docs/images` from real runs of the FL plugins |
 | `deploy/` | Dockerfile, Azure VM, Azure ML fine-tune job |

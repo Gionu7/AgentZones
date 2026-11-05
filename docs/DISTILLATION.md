@@ -10,6 +10,18 @@ Two small models are involved:
 The student ensures the doctor works on any laptop, even without a model server. The small LLM makes the
 explanations sound like the teacher's.
 
+```mermaid
+flowchart LR
+  synth["synthetic cases<br/>per site profile"] --> teacher["teacher LLM<br/>labels them"]
+  teacher --> student["student classifier<br/>(2.5k parameters)"]
+  student --> fl["federated learning<br/>across zones"]
+  fl --> doctor(["Proxy Doctor<br/>decides"])
+  teacher --> sft["explanations<br/>(SFT data)"]
+  sft --> lora["LoRA fine-tune<br/>GPU box or Azure ML"]
+  lora --> gguf["GGUF"]
+  gguf --> ollama(["Ollama: proxy-doctor<br/>explains"])
+```
+
 ## 1. Synthetic failure cases
 
 `proxy_doctor/synth.py` generates observations in exactly the format the real diagnostics return. Each case is
@@ -121,17 +133,20 @@ plugin is [tasks/proxy_student.py](../tasks/proxy_student.py) and the protocol i
 [ARCHITECTURE.md](ARCHITECTURE.md). Point a client's `FL_MODEL_OUT` and the doctor's `PD_MODEL_PATH` at the same
 file and the doctor switches to the federated model when a run is done.
 
-Typical result from `python scripts/demo.py`, measured on the shared synthetic benchmark, which is used for
-evaluation only:
+Measured on the shared synthetic benchmark, which is used for evaluation only. Each run gets the same amount
+of training (5 rounds of 5 local epochs); `python scripts/make_doc_charts.py` reproduces it.
+
+<img src="images/fl-why-federate.svg" alt="Bar chart: trained alone, az 76%, b 70%, cn 73%; federated across all three, 97%" width="720">
 
 | | benchmark accuracy |
 |---|---|
-| Each site's own model (local data only) | 25–50% on problems from other sites |
-| After 1 FedAvg round (az, b, cn) | about 70% |
-| After 3 rounds | **about 96%** |
+| az alone (dev-laptops) | 76.1% |
+| b alone (build-servers) | 70.0% |
+| cn alone (k8s-cluster) | 72.7% |
+| **federated: az + b + cn** | **96.7%** |
 
-Each site alone is good at its own problems and bad at everyone else's. Federation fixes that without any site
-sharing its incident data.
+Each site alone is good at its own problems and misses about a quarter of everyone else's. Federation closes
+the gap without any site sharing its incident data.
 
 ## Questions for the mentors
 

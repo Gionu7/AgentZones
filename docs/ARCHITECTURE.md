@@ -2,18 +2,22 @@
 
 ## A zone
 
-```
-             ┌──────────────────────────── zone (one Compose project) ─────────────────────────────┐
- operator ──►│ 127.0.0.1:808x  gateway  local API  /directory  /send  /agents/register  /status    │
- MCP client ►│ 127.0.0.1:800x  mcp ──────┘   ▲          │                                           │
-             │                               │ register │ POST /message                             │
-             │                agents ────────┘          ▼                                           │
-             │                (proxy-doctor, fl-client, fl-aggregator, assistant, ...)              │
-             │                  │ MCP (stdio)            │ OpenAI-compatible API                     │
-             │                  ▼                        ▼                                           │
-             │                MCP servers               ollama (COMPOSE_PROFILES=llm)               │
-             └──────────────────────────────────────────────────────────────────────────────────────┘
-                 hub zone only: gateway hub API on :9090  ◄── spokes (signed, long-poll)
+```mermaid
+flowchart LR
+  op(["operator, CLI,<br/>browser"]) -- "127.0.0.1:808x" --> gw
+  mcpc(["MCP client:<br/>Claude Desktop, IDE"]) -- "127.0.0.1:800x" --> mcp["mcp<br/>list_agents · send_message · fl_*"]
+  mcp --> gw
+  subgraph zone["one zone = one Compose project"]
+    gw["gateway<br/>local API · dashboard"]
+    agents["agents<br/>proxy-doctor · fl-client · fl-aggregator<br/>assistant · code-assistant"]
+    tools["MCP servers<br/>(stdio)"]
+    llm["Ollama<br/>(COMPOSE_PROFILES=llm)"]
+    gw -- "POST /message" --> agents
+    agents -- "register every 10 s,<br/>/directory, /send, send_all<br/>(with its X-Agent-Token)" --> gw
+    agents --> tools
+    agents -- "OpenAI API" --> llm
+  end
+  gw -. "hub zone: hub API :9090<br/>spoke zones: long poll to the hub" .- hubnet(("other zones"))
 ```
 
 * **Gateway** ([agentzones/gateway.py](../agentzones/gateway.py)): one per zone, configured by environment
@@ -44,6 +48,36 @@
 {"id": "…", "kind": "reply", "reply_to": "<request id>", "from_zone": "cn", "to_zone": "b", "payload": {"...": "..."}}
 ```
 
+### A message from b to cn, step by step
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant A as agent in b
+  participant GB as gateway b
+  participant P as b's proxy
+  participant H as hub (az)
+  participant GC as gateway cn
+  participant C as agent in cn
+  Note over GB,GC: both spokes always keep a long poll open to the hub
+  GC->>H: GET /hub/poll (waits up to 20 s)
+  GB->>P: GET /hub/poll
+  P->>H: forwarded
+  A->>GB: POST /send {target_zone: cn, payload} + X-Agent-Token
+  GB->>GB: from_agent = the name that token holds
+  GB->>P: POST /hub/send (signed with b's token)
+  P->>H: forwarded
+  H->>H: check signature, from_zone = b, remember route
+  H-->>GC: cn's poll returns the message
+  GC->>H: POST /hub/ack
+  GC->>C: POST /message
+  C-->>GC: reply
+  GC->>H: POST /hub/send reply (accepted only from cn)
+  H-->>P: b's poll returns the reply
+  P-->>GB: forwarded
+  GB-->>A: the reply, as the answer to /send
+```
+
 `POST /send` creates a request, waits for the reply (up to `timeout`, default 60 s) and returns its
 payload. `expires` travels with the message; the hub drops messages that are past it, and the receiving
 gateway gives the agent only the time that is left.
@@ -63,6 +97,20 @@ it and remembers message ids for 15 minutes, so a redelivered message is not han
 handed out but did not see acknowledged within `ACK_TIMEOUT_S` (30 s) goes back to the mailbox; the long poll
 wakes up for it. Mailboxes hold at most 1000 messages per spoke.
 
+### A message in a spoke's mailbox
+
+```mermaid
+stateDiagram-v2
+  direction LR
+  [*] --> queued: hub accepts it
+  queued --> in_flight: the spoke's poll takes it
+  in_flight --> [*]: spoke acks it
+  in_flight --> queued: no ack within 30 s, delivered again
+  queued --> [*]: expired (past the sender's timeout)
+  queued --> dropped: mailbox over 1000 messages
+  dropped --> [*]
+```
+
 ### Routing rules on the hub
 
 * A spoke is **online** while it has a long poll open or polled in the last 30 s. Offline spokes' agents are
@@ -79,15 +127,79 @@ wakes up for it. Mailboxes hold at most 1000 messages per spoke.
 
 ## Federated learning
 
+### One round
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Agg as aggregator (b)
+  participant H as hub (az)
+  participant C1 as client az
+  participant C2 as client b
+  participant C3 as client cn
+  Agg->>H: directory("fl-client:mnist")
+  H-->>Agg: the clients, in every zone
+  par the same global model to every client, via the hub
+    Agg->>C1: fl.fit {parameters, round, config}
+    Agg->>C2: fl.fit
+    Agg->>C3: fl.fit
+  end
+  Note over C1,C3: each trains on its OWN data, which never leaves its zone
+  C1-->>Agg: new parameters, num_samples, metrics
+  C2-->>Agg: new parameters, num_samples, metrics
+  C3-->>Agg: new parameters, num_samples, metrics
+  Agg->>Agg: screen: shapes, NaN, sample cap, update size vs median
+  Agg->>Agg: FedAvg: w = Σ (nᵢ / N) · wᵢ
+  Agg->>Agg: evaluate, save /models/mnist-latest.npz
+  Note over Agg: next round: look the clients up again
 ```
-aggregator (b)                         hub (az)                 clients (az, b, cn)
-  fl.start  ◄──────── from any zone
-  directory("fl-client:mnist") ─────► agents of all zones
-  round r:  fl.fit {parameters, round, config} ──────────────► fit() on local data
-            ◄─────── {status: ok, parameters, num_samples, metrics}
-            check shapes, aggregate_fit(), evaluate(), save /models/mnist-latest.npz
-  done:     fl.model {parameters} ───────────────────────────► on_global(), FL_MODEL_OUT
+
+### Lifecycle of a run
+
+```mermaid
+stateDiagram-v2
+  direction LR
+  [*] --> idle
+  idle --> waiting_for_clients: start
+  waiting_for_clients --> running: FL_MIN_CLIENTS in the directory
+  running --> waiting_for_clients: next round
+  running --> done: all rounds
+  running --> failed: too few updates, retries used up
+  running --> stopped: fl.stop
 ```
+
+`fl.stop` also stops a run that is still waiting for clients, and a new start from done, failed or stopped goes
+back to waiting for clients. A run starts by `fl.start` from an operator, an approved `fl.request`, or `FL_SCHEDULE_S`. When it is done the
+final model goes to every client. It fails after `FL_MAX_ROUND_RETRIES` rounds in a row with fewer than
+`FL_MIN_FIT_CLIENTS` usable updates. A spoke drops a redelivered message it has already seen.
+
+### What it achieves
+
+Real runs of the plugins in `tasks/`, five rounds each (`python scripts/make_doc_charts.py`).
+
+<img src="images/fl-rounds.svg" alt="Line chart: accuracy of the federated Proxy Doctor classifier per round: 68.7%, 93.8%, 96.6%, 96.7%, 96.7%" width="720">
+
+| round | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| Proxy Doctor's classifier, shared benchmark | 68.7% | 93.8% | 96.6% | 96.7% | 96.7% |
+
+<img src="images/fl-mnist.svg" alt="Line chart: MNIST test accuracy per round. With evenly split data: 91.0% to 95.1%. With each zone holding different digits: 46.9% to 78.4%" width="720">
+
+| round | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| MNIST, each zone a third of all digits | 91.0% | 92.6% | 93.8% | 94.5% | 95.1% |
+| MNIST, az: 0–3, b: 4–6, cn: 7–9 | 46.9% | 64.7% | 72.2% | 76.3% | 78.4% |
+
+When every zone holds different digits (`LABELS`), each client pulls the model towards its own classes and plain
+FedAvg needs many more rounds. That is the classic non-IID problem; FedProx or server momentum are the usual
+next steps.
+
+The dashboard's *Learning* page shows the same for a live run: the lifecycle with the current state lit, the
+steps of a round, global and per-client accuracy, and each client's share in the average.
+
+<img src="images/dashboard-learning.png" alt="The dashboard's Learning page: a pending request from an LLM agent with Approve and Reject, the limits, the run lifecycle with done lit, the six steps of a round, the global model's accuracy per round and each client's accuracy after local training" width="900">
+
+### Details
 
 Before averaging, the aggregator screens the updates: names, shapes and NaN; `FL_MAX_SAMPLES` caps claimed
 sample counts; updates whose distance from the global model is over `FL_MAX_UPDATE_RATIO` × the median are
@@ -106,12 +218,23 @@ for that round; the round still counts with `FL_MIN_FIT_CLIENTS` results.
 
 ## Proxy Doctor flow
 
-```
-ask (own zone only) → diagnose (MCP) → student.classify → confident and a verified fix known? ─yes─► apply → re-diagnose → verified? → store + pd.fix to other zones
-                                                             │ no
-                                                             ▼
-                                         pd.consult (observation only) to the other zones' proxy-doctor
-                                         → vote (unsure) or collect their verified fixes (confident)
+```mermaid
+flowchart TD
+  q(["question"]) --> who{"from its own zone?"}
+  who -- "no" --> adv["advice: classify the question's text,<br/>return verified or catalog fix<br/>(no checks on this machine)"]
+  who -- "yes" --> diag["diagnose this machine<br/>(MCP tools: proxy env, TLS, CA, clock)"]
+  diag --> cls["classify with the student model<br/>(federated if trained)"]
+  cls --> sure{"confident, and a<br/>verified fix known?"}
+  sure -- "no" --> consult["pd.consult the other zones<br/>(observation only)"]
+  consult --> vote["unsure: they vote<br/>confident: collect their verified fixes"]
+  vote --> plan
+  sure -- "yes" --> plan["pick a fix: ours > other zones' > catalog"]
+  plan --> apply["apply<br/>(dry run unless allowed)"]
+  apply --> check{"checks pass again?"}
+  check -- "yes" --> share["store as verified,<br/>pd.fix to the other zones"]
+  check -- "no" --> explain
+  adv --> explain
+  share --> explain(["answer, explained by the local LLM<br/>or a template"])
 ```
 
 * The **observation** holds only diagnostics: env flags with redacted proxy credentials, HTTP status codes and
