@@ -63,6 +63,9 @@ An agent is a subclass of `agentzones.agent.Agent` with one method, `async handl
 Set `accepts` on the class to the message types it handles, e.g. `{"fl.status": "{} -> state, round"}`; it is
 published in the directory, so other agents, MCP clients and LLM agents know what they can send.
 `self.gw.send_all(capability, payload)` sends to every matching agent at once and returns their replies.
+An agent that runs in several zones and fixes problems on its own machine can subclass
+`agentzones.peers.PeerAgent` instead: it consults its peers in the other zones when unsure and shares the fixes it
+verified, as Proxy Doctor does (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#agents-that-learn-from-their-peers)).
 
 Each agent process sends a random secret with its calls, made up at start; there is nothing to configure. A
 live agent's name cannot be registered by another container, and a send is always marked with the name of the
@@ -143,7 +146,9 @@ Two plugins are included:
 machine. It uses an MCP server for the checks and a small student model to classify them. When it is unsure,
 it consults the proxy doctors of the other zones (`pd.consult`), sending only the diagnostic observation with
 credentials redacted. A fix is shared with the other zones (`pd.fix`) only after it has been applied and the
-checks pass again. Received fixes are never applied without verifying them locally.
+checks pass again. Received fixes are never applied without verifying them locally. The consulting and sharing
+are the generic `PeerAgent` ([agentzones/peers.py](agentzones/peers.py)); the doctor adds the checks, the model
+and the fix catalog.
 
 ```bash
 python -m agentzones.cli --gateway http://127.0.0.1:8081 ask proxy-doctor "pip fails with 407" --simulate proxy_auth_required
@@ -332,6 +337,7 @@ complete federated-learning run.
 | `agentzones/gateway.py`, `hub.py`, `security.py` | gateway (local API + hub API), mailboxes and routing, signing |
 | `agentzones/dashboard.py`, `static/dashboard.html` | the zone dashboard |
 | `agentzones/agent.py`, `llm_agent.py`, `mcp_gateway.py` | agent base class and host, LLM agent, zone MCP server |
+| `agentzones/peers.py`, `knowledge.py` | `PeerAgent`: agents of one kind consult each other and share verified fixes; the fix store |
 | `agentzones/models.py`, `laptop.py` | `agentzone model setup`, `agentzone laptop` |
 | `agentzones/fl/` | generic FL: plugin interfaces, client and aggregator agents |
 | `tasks/` | FL plugins (MNIST, Proxy Doctor student) |

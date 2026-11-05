@@ -16,6 +16,9 @@ From another zone only ``pd.consult`` (classify *their* observation with our
 model, return our verified fixes) and ``pd.fix`` (a verified fix to store,
 never auto-applied) are accepted. We never run diagnostics on our machine for
 someone else's problem.
+
+Steps 3, 4 and 6 and the ``pd.*`` messages are the generic
+:class:`agentzones.peers.PeerAgent`; this module is the proxy-specific part.
 """
 
 from __future__ import annotations
@@ -29,10 +32,10 @@ from typing import Any
 
 import numpy as np
 
-from agentzones.agent import Agent, GatewayError, Incoming
-from agentzones.config import MCPServerConfig, model_from_env
-from agentzones.knowledge import FixStore
+from agentzones.agent import Incoming
+from agentzones.config import MCPServerConfig, env_bool, model_from_env
 from agentzones.llm import LLM, LLMUnavailable
+from agentzones.peers import PeerAgent
 from agentzones.tools import ToolRegistry
 
 from .catalog import DESCRIPTIONS, render_fix
@@ -52,29 +55,26 @@ def sanitize(obs: dict[str, Any]) -> dict[str, Any]:
     return {k: obs[k] for k in SHARE_KEYS if k in obs}
 
 
-def _bool(v: str | None, default: bool) -> bool:
-    return default if v is None or v == "" else v.strip().lower() in ("1", "true", "yes", "on")
-
-
-class ProxyDoctor(Agent):
+class ProxyDoctor(PeerAgent):
     capabilities = [CAPABILITY, "chat"]
     description = "Diagnoses and fixes corporate proxy and certificate problems"
     accepts = {
         "ask": "{question, context?: {target, internal_url, error_text, simulate}}: own zone only -> diagnosis, fix",
-        "pd.consult": "{question, observation}: classify another zone's diagnostics -> {answer, diagnosis, fixes}",
-        "pd.fix": "{fix}: a fix verified by the sending zone -> {ok, id}",
-        "fixes": "{problem?, text?} -> known fixes",
         "status": "{} -> model, fixes",
     }
+    # peers: the proxy doctors of the other zones (pd.consult, pd.fix, PD_THRESHOLD, PD_SHARE_FIXES, ...)
+    peer_capability = CAPABILITY
+    peer_prefix = "pd"
+    share_keys = SHARE_KEYS
+    problems = DESCRIPTIONS
+    healthy = "healthy"
+    fixes_file = "fixes.json"
 
     async def start(self) -> None:
+        await super().start()
         c = self.config
-        self.threshold = float(c.get("PD_THRESHOLD", "0.75"))
-        self.auto_apply = _bool(c.get("PD_AUTO_APPLY"), False)
-        self.share = _bool(c.get("PD_SHARE_FIXES"), True)
-        self.use_llm = _bool(c.get("PD_EXPLAIN_WITH_LLM"), True)
-        self.peer_timeout = float(c.get("PD_PEER_TIMEOUT_S", "30"))
-        self.fixes = FixStore(Path(c.get("DATA_DIR", "/data")) / "fixes.json")
+        self.auto_apply = env_bool(c.get("PD_AUTO_APPLY"), False)
+        self.use_llm = env_bool(c.get("PD_EXPLAIN_WITH_LLM"), True)
         self.llm = LLM(model_from_env(c))
         self.tools = ToolRegistry()
         await self.tools.start_mcp([MCPServerConfig(name="proxy", command=c.get("PD_MCP_COMMAND", sys.executable),
@@ -113,23 +113,22 @@ class ProxyDoctor(Agent):
             self._model_mtime = p.stat().st_mtime
         return self._model
 
+    async def classify(self, observation: dict[str, Any]) -> dict[str, Any]:
+        return self.model.classify(observation)
+
     async def _tool(self, name: str, **args: Any) -> Any:
         return await self.tools.call(f"proxy.{name}", args)
 
     def status(self) -> dict[str, Any]:
         self.model  # picks up a new federated model
-        return {"model": self._model_source, "fixes": len(self.fixes.fixes)}
+        return {"model": self._model_source, **super().status()}
 
     # ------------------------------------------------------------------ messages
     async def handle(self, msg: Incoming) -> Any:
+        if (reply := await self.handle_peer(msg)) is not None:  # pd.consult, pd.fix, fixes
+            return reply
         p = msg.payload if isinstance(msg.payload, dict) else {"type": "ask", "question": str(msg.payload)}
         t = p.get("type")
-        if t == "pd.consult":
-            return await self._consult(p.get("question", ""), p.get("observation"))
-        if t == "pd.fix":
-            return self._receive_fix(p.get("fix") or {}, msg.from_zone)
-        if t == "fixes":
-            return self.fixes.search(p.get("problem"), p.get("text", ""))
         if t == "status":
             return self.status()
         if t in ("ask", None):
@@ -139,58 +138,13 @@ class ProxyDoctor(Agent):
         return self.unknown(t)
 
     # ------------------------------------------------------------------ other zones
-    async def _consult(self, question: str, obs: dict[str, Any] | None) -> dict[str, Any]:
-        if not obs:
-            return {"answer": "Send the diagnostic observation.", "diagnosis": None}
-        d = self.model.classify({**obs, "question": question})
-        fixes = [f for f in self.fixes.search(d["problem"]) if f["verified_by"]]
-        return {"zone": self.zone, "answer": f"{d['problem']} ({d['confidence']:.0%}): {DESCRIPTIONS[d['problem']]}",
-                "diagnosis": d, "fixes": fixes[:2]}
-
-    def _receive_fix(self, fix: dict[str, Any], zone: str) -> dict[str, Any]:
-        try:
-            if fix.get("problem") not in DESCRIPTIONS or not isinstance(fix.get("steps"), list):
-                raise ValueError("not a fix")
-            # a zone can only vouch for itself
-            fix = {**fix, "verified_by": [zone], "origin": str(fix.get("origin") or zone)[:64],
-                   "summary": str(fix.get("summary", ""))[:300], "symptoms": str(fix.get("symptoms", ""))[:500],
-                   "steps": [str(s)[:500] for s in fix["steps"][:20]], "evidence": {}}
-            known = fix.get("id") in self.fixes.fixes
-            merged = self.fixes.merge(fix)
-            if not known:
-                log.info("received verified fix from %s: %s", zone, merged["summary"])
-            return {"ok": True, "id": merged["id"]}
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-    async def _consult_zones(self, question: str, obs: dict[str, Any]) -> list[dict[str, Any]]:
-        try:
-            replies = await self.gw.send_all(CAPABILITY, {"type": "pd.consult", "question": question,
-                                                          "observation": sanitize(obs)},
-                                             timeout=self.peer_timeout, other_zones_only=True)
-        except Exception as exc:
-            log.warning("directory unavailable: %s", exc)
-            return []
-        return [{**r, "zone": e["zone"]} if isinstance(r, dict) else {"zone": e["zone"], "error": str(r)}
-                for e, r in replies]
-
-    async def _share_fix(self, fix: dict[str, Any]) -> list[str]:
-        try:
-            replies = await self.gw.send_all(CAPABILITY, {"type": "pd.fix", "fix": fix}, timeout=20,
-                                             other_zones_only=True)
-        except Exception:
-            return []
-        return sorted({e["zone"] for e, r in replies if isinstance(r, dict) and r.get("ok")})
-
     async def advise(self, question: str, zone: str) -> dict[str, Any]:
         """A question from another zone: classify the error text in it and share what we know.
         Runs no diagnostics here: this machine is not the one with the problem."""
         d = self.model.classify({"tool_errors": [question], "question": question})
         problem = d["problem"]
-        verified = [f for f in self.fixes.search(problem) if f["verified_by"]]
-        plan = ({"problem": problem, "summary": verified[0]["summary"], "steps": verified[0]["steps"],
-                 "source": f"verified by {', '.join(verified[0]['verified_by'])}"} if verified
-                else {**render_fix(problem, {}), "source": "catalog"})
+        fix = self.best_fix(problem)
+        plan = self.fix_plan(fix) if fix else {**render_fix(problem, {}), "source": "catalog"}
         result: dict[str, Any] = {"mode": "advice", "diagnosis": {**d, "local": d, "peers": []},
                                   "description": DESCRIPTIONS[problem], "fix": plan, "verified": False,
                                   "trace": [{"step": "classify the question text", "by": self.zone, **d}]}
@@ -212,45 +166,18 @@ class ProxyDoctor(Agent):
 
         local = self.model.classify(obs)
         trace.append({"step": "classify", "by": self.zone, "model": self._model_source, **local})
-        votes: dict[str, float] = {local["problem"]: local["confidence"]}
-        known = [f for f in self.fixes.search(local["problem"]) if f["verified_by"]]
-
-        peer_fixes: list[dict[str, Any]] = []
-        consulted: list[dict[str, Any]] = []
-        unsure = local["confidence"] < self.threshold
-        if unsure or (local["problem"] != "healthy" and not known):
-            # unsure -> peers vote on the diagnosis; confident -> peers are only asked for verified fixes
-            answers = await self._consult_zones(question, obs)
-            for a in answers:
-                d = a.get("diagnosis")
-                if not d:
-                    continue
-                consulted.append({"zone": a.get("zone"), "problem": d["problem"], "confidence": d["confidence"],
-                                  "verified_fixes": len(a.get("fixes") or [])})
-                if unsure:
-                    votes[d["problem"]] = votes.get(d["problem"], 0.0) + d["confidence"]
-                for f in a.get("fixes") or []:
-                    if unsure:
-                        votes[f["problem"]] = votes.get(f["problem"], 0.0) + 0.1 * len(f.get("verified_by", []))
-                    peer_fixes.append(f)
-            trace.append({"step": "consult_zones", "mode": "vote" if unsure else "fixes_only", "answers": consulted})
-
-        problem = max(votes, key=votes.get)
-        voters = 1 + (len(consulted) if unsure else 0)
-        confidence = min(votes[problem] / voters, 1.0)  # mean support across voters
-        result: dict[str, Any] = {"diagnosis": {"problem": problem, "confidence": round(confidence, 3),
-                                                "local": local, "peers": consulted},
-                                  "description": DESCRIPTIONS[problem], "trace": trace}
+        # unsure -> the other zones' doctors vote; sure but no verified fix -> they are asked for theirs
+        d = await self.ask_peers(question, obs, local)
+        trace += d.trace
+        problem = d.problem
+        result: dict[str, Any] = {"diagnosis": d.summary(), "description": DESCRIPTIONS[problem], "trace": trace}
         if problem == "healthy":
             result["answer"] = await self._explain(question, result)
             return result
 
         # pick a plan: our verified fix > peer-verified fix > catalog
-        candidates = [f for f in self.fixes.search(problem) if f["verified_by"]] or \
-                     [f for f in peer_fixes if f["problem"] == problem]
-        plan = ({"problem": problem, "summary": candidates[0]["summary"], "steps": candidates[0]["steps"],
-                 "source": f"verified by {', '.join(candidates[0]['verified_by'])}"} if candidates
-                else {**render_fix(problem, obs), "source": "catalog"})
+        fix = self.best_fix(problem, d.fixes)
+        plan = self.fix_plan(fix) if fix else {**render_fix(problem, obs), "source": "catalog"}
         result["fix"] = plan
 
         applied = await self._tool("apply_fix", problem=problem, dry_run=not self.auto_apply,
@@ -268,15 +195,13 @@ class ProxyDoctor(Agent):
                           "verified": verified})
         result["verified"] = verified
 
-        if verified:
-            fix = self.fixes.add(problem=problem, summary=plan["summary"], steps=plan["steps"],
-                                      symptoms=" ".join(obs.get("tool_errors", []))[:500],
-                                      verified_by=[self.zone], origin=self.zone,
-                                      platform=obs.get("os", "any"),
-                                      evidence={"simulated": obs.get("simulated", False)})
-            log.info("verified fix for %s: %s", problem, plan["summary"])
-            if self.share:
-                result["shared_with"] = await self._share_fix(fix)
+        if verified:  # store it and send it to the other zones' doctors
+            _, shared = await self.learned(problem, plan["summary"], plan["steps"],
+                                           symptoms=" ".join(obs.get("tool_errors", [])),
+                                           platform=obs.get("os", "any"),
+                                           evidence={"simulated": obs.get("simulated", False)})
+            if shared is not None:
+                result["shared_with"] = shared
         result["answer"] = await self._explain(question, result)
         return result
 

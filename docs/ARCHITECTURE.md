@@ -249,3 +249,56 @@ flowchart TD
   plain words (``ask`` from another zone gets *advice*: the error text in the question is classified, and our
   verified or catalog fix is returned; nothing runs on this machine) and push fixes. A pushed fix is stored as verified by the *sending* zone only, and is not applied until the local
   doctor verifies it.
+
+## Agents that learn from their peers
+
+The consulting and sharing in Proxy Doctor's flow are not about proxies. They live in
+[agentzones/peers.py](../agentzones/peers.py) as `PeerAgent`, so any agent that runs in several zones and
+diagnoses and fixes problems on its own machine can pool what it learns the same way. The *peers* are the
+agents that advertise the same `peer_capability`; a subclass supplies only the domain:
+
+| Subclass sets | Proxy Doctor's |
+|---|---|
+| `peer_capability`: who the peers are | `proxy-doctor` |
+| `peer_prefix`: message types `<prefix>.consult`, `<prefix>.fix` and settings `<PREFIX>_*` | `pd` |
+| `share_keys`: all that peers ever see of an observation | `SHARE_KEYS`: diagnostics, no secrets |
+| `problems`: the labels a diagnosis can have, with a description | `catalog.DESCRIPTIONS` |
+| `healthy`: the label that needs no fix | `healthy` |
+| `async classify(observation)` → `{problem, confidence}` | the student model |
+
+and it gets:
+
+| | |
+|---|---|
+| `await handle_peer(msg)` | answers `<prefix>.consult`, `<prefix>.fix` and `fixes`; None for anything else. Call it first in `handle` |
+| `await ask_peers(question, obs, local)` | sure and a verified fix known: nobody is asked. Sure, no fix: the peers are asked for their verified fixes. Unsure: they vote |
+| `best_fix(problem, peer_fixes)`, `fix_plan(fix)` | a fix verified here, else one a peer verified, else None (use your own catalog) |
+| `await learned(problem, summary, steps)` | after the fix was applied *and the checks pass again*: store it as verified by this zone and send it to the peers |
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant A as peer agent (az)
+  participant B as peer agent (b)
+  participant C as peer agent (cn)
+  Note over A: classify own observation: unsure, or no verified fix
+  par only the share_keys of the observation
+    A->>B: prefix.consult {question, observation}
+    A->>C: prefix.consult
+  end
+  B-->>A: diagnosis + fixes b knows as verified
+  C-->>A: diagnosis + fixes cn knows as verified
+  Note over A: unsure: vote (confidence, +0.1 per verifying zone)<br/>pick: our fix > a peer's > own catalog
+  Note over A: apply, check again: passes
+  par
+    A->>B: prefix.fix {fix}
+    A->>C: prefix.fix
+  end
+  Note over B,C: stored as verified by az only, never applied
+```
+
+What other zones send is checked: a diagnosis with an unknown label or a confidence that is not a number does
+not count, confidences are clamped to 0..1, a pushed fix's `verified_by` is replaced by the sending zone, and
+fields are cut to size. `<PREFIX>_THRESHOLD` (0.75), `<PREFIX>_SHARE_FIXES` (1) and `<PREFIX>_PEER_TIMEOUT_S`
+(30) are the settings; fixes are kept in `DATA_DIR/<prefix>-fixes.json` (Proxy Doctor keeps `fixes.json`).
+`tests/test_peers.py` runs a toy peer agent without any of the proxy code.

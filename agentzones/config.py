@@ -49,6 +49,11 @@ def mcp_servers_from_env(value: str) -> list[MCPServerConfig]:
     return [MCPServerConfig.model_validate(v) for v in json.loads(value)]
 
 
+def env_bool(value: str | None, default: bool) -> bool:
+    """An on/off setting: 1/true/yes/on; unset or empty gives ``default``."""
+    return default if value is None or value == "" else value.strip().lower() in ("1", "true", "yes", "on")
+
+
 def model_from_env(env: dict[str, str]) -> ModelConfig:
     return ModelConfig(provider=env.get("MODEL_PROVIDER", "openai"),  # type: ignore[arg-type]
                        base_url=env.get("MODEL_URL", "http://ollama:11434/v1"),
