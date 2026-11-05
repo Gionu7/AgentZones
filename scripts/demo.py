@@ -27,19 +27,20 @@ import asyncio
 import contextlib
 import json
 import logging
+import socket
 import sys
 import tempfile
 from pathlib import Path
 
 import httpx
-import uvicorn
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from agentzones.agent import AgentHost  # noqa: E402
-from agentzones.devproxy import ForwardProxy, free_port  # noqa: E402
+from agentzones.devproxy import ForwardProxy  # noqa: E402
 from agentzones.gateway import Gateway, GatewaySettings, HubClient, hub_app, local_app  # noqa: E402
+from agentzones.localserver import LocalServer, free_port  # noqa: E402
 
 B, DIM, G, R, Y, X = "\033[1m", "\033[2m", "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 TOKENS = {"b": "demo-token-b-4f1c2a", "cn": "demo-token-cn-9e7d3b"}
@@ -50,24 +51,7 @@ def h(title: str) -> None:
     print(f"\n{B}=== {title} ==={X}")
 
 
-class Server:
-    def __init__(self, app, port: int):
-        self.port = port
-        self.server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
-
-    async def __aenter__(self):
-        self.task = asyncio.create_task(self.server.serve())
-        while not self.server.started:
-            await asyncio.sleep(0.02)
-        return self
-
-    async def __aexit__(self, *exc):
-        self.server.should_exit = True
-        await self.task
-
-
 def port_or_free(port: int) -> int:
-    import socket
     with socket.socket() as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # like uvicorn: TIME_WAIT is fine
         try:
@@ -82,10 +66,10 @@ async def gateway(stack, port: int = 0, hub_port: int = 0, **kw) -> tuple[Gatewa
                         hub_port=port_or_free(hub_port) if hub_port else free_port(), poll_wait_s=10,
                         register_interval_s=2, **kw)
     gw = Gateway(s)
-    await stack.enter_async_context(Server(local_app(gw), s.port))
+    await stack.enter_async_context(LocalServer(local_app(gw), s.port))
     hub = None
     if gw.hub:
-        await stack.enter_async_context(Server(hub_app(gw), s.hub_port))
+        await stack.enter_async_context(LocalServer(hub_app(gw), s.hub_port))
         hub = f"http://127.0.0.1:{s.hub_port}"
     return gw, f"http://127.0.0.1:{s.port}", hub
 
@@ -95,7 +79,7 @@ async def agent(stack, gw_url: str, name: str, impl: str, **env) -> None:
     host = AgentHost({"AGENT_NAME": name, "AGENT_IMPL": impl, "AGENT_PORT": str(port),
                       "AGENT_URL": f"http://127.0.0.1:{port}", "GATEWAY_URL": gw_url, "REGISTER_INTERVAL_S": "2",
                       **env})
-    await stack.enter_async_context(Server(host.app(), port))
+    await stack.enter_async_context(LocalServer(host.app(), port))
 
 
 async def main(keep: bool, rounds: int, llm: bool = False) -> int:

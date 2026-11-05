@@ -17,6 +17,7 @@ import base64
 import importlib
 import io
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -101,6 +102,15 @@ def encode(params: Parameters) -> str:
 def decode(blob: str) -> Parameters:
     with np.load(io.BytesIO(base64.b64decode(blob)), allow_pickle=False) as z:
         return {k: z[k] for k in z.files}
+
+
+def save_npz(path: str | Path, params: Parameters) -> None:
+    """Write ``params`` to ``path`` atomically, so a reader never sees half a file."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp.npz")
+    np.savez_compressed(tmp, **params)
+    tmp.replace(path)
 
 
 def load_plugin(spec: str, config: dict[str, str]) -> Any:

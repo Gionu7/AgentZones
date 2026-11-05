@@ -68,8 +68,7 @@ class Dashboard:
             if now - self._doctors[0] > self.doctors_every_s:
                 self._doctors = (now, await self._doctor_status(directory))
         out: dict[str, Any] = {"t": time.time(), **gw.status(), "directory": directory, "fl": self._fl[1],
-                               "doctors": self._doctors[1], "events": gw.events[-80:]}
-        out["poll_wait_s"] = gw.s.poll_wait_s
+                               "doctors": self._doctors[1], "events": gw.events[-80:], "poll_wait_s": gw.s.poll_wait_s}
         if gw.hub:
             out["traffic"] = list(gw.hub.traffic)[-150:]
             out["totals"] = gw.hub.totals

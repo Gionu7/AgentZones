@@ -138,6 +138,11 @@ def peer_issuer(host: str, port: int = 443, timeout: float = 8.0) -> str | None:
         return None
 
 
+def intercepted(issuer: str | None) -> bool | None:
+    """True if a certificate issuer is not a public CA, i.e. a proxy re-signs TLS. None if unknown."""
+    return None if issuer is None else not any(m in issuer.lower() for m in PUBLIC_CA_MARKERS)
+
+
 def _bypass(host: str) -> bool:
     try:
         return bool(urllib.request.proxy_bypass(host))
@@ -165,7 +170,6 @@ def diagnose(target: str = "https://pypi.org", internal_url: str = "", error_tex
     system = https_get(target, sys_ctx) if tool_ctx is not sys_ctx else external
     noverify = https_get(target, _noverify_ctx())
     issuer = peer_issuer(host)
-    intercepted = None if issuer is None else not any(m in issuer.lower() for m in PUBLIC_CA_MARKERS)
 
     def verify_ok(res: dict) -> bool | None:
         if res["ok"]:
@@ -188,7 +192,7 @@ def diagnose(target: str = "https://pypi.org", internal_url: str = "", error_tex
         "external_noverify": {k: noverify[k] for k in ("ok", "status", "error")},
         "internal": internal,
         "dns_external_ok": dns_check(host),
-        "tls": {"issuer": issuer, "intercepted": intercepted},
+        "tls": {"issuer": issuer, "intercepted": intercepted(issuer)},
         "ca": {
             "system_has_issuer": verify_ok(system) if noverify["ok"] else None,
             "python_has_issuer": verify_ok(https_get(target, certifi_ctx)) if (certifi_ctx and noverify["ok"]) else None,

@@ -27,15 +27,10 @@ class Tool:
     description: str
     input_schema: dict[str, Any]
     handler: Handler
-    exposed: bool = False  # callable by peer zones
-    server: str = "zone"
 
     @property
     def llm_name(self) -> str:
         return self.name.replace(".", "__")
-
-    def spec(self) -> dict[str, Any]:
-        return {"name": self.name, "description": self.description, "input_schema": self.input_schema}
 
     def openai(self) -> dict[str, Any]:
         return {"type": "function", "function": {
@@ -51,9 +46,9 @@ class ToolRegistry:
     def add(self, tool: Tool) -> None:
         self.tools[tool.name] = tool
 
-    def builtin(self, name: str, description: str, schema: dict[str, Any] | None = None, exposed: bool = False):
+    def builtin(self, name: str, description: str, schema: dict[str, Any] | None = None):
         def deco(fn: Handler) -> Handler:
-            self.add(Tool(f"zone.{name}", description, schema or {"type": "object", "properties": {}}, fn, exposed))
+            self.add(Tool(f"zone.{name}", description, schema or {"type": "object", "properties": {}}, fn))
             return fn
         return deco
 
@@ -72,9 +67,7 @@ class ToolRegistry:
                 continue
             self.clients.append(client)
             for t in client.tools:
-                exposed = any(fnmatch.fnmatch(t.name, pat) for pat in s.expose)
-                self.add(Tool(f"{s.name}.{t.name}", t.description, t.input_schema,
-                              self._mcp_handler(client, t.name), exposed, s.name))
+                self.add(Tool(f"{s.name}.{t.name}", t.description, t.input_schema, self._mcp_handler(client, t.name)))
             log.info("MCP server %s: %d tools", s.name, len(client.tools))
 
     @staticmethod
@@ -96,9 +89,6 @@ class ToolRegistry:
 
     def by_llm_name(self, llm_name: str) -> Tool | None:
         return self.tools.get(llm_name.replace("__", ".", 1))
-
-    def exposed(self) -> list[Tool]:
-        return [t for t in self.tools.values() if t.exposed]
 
     async def call(self, name: str, args: dict[str, Any]) -> Any:
         tool = self.tools.get(name)

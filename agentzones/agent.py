@@ -27,7 +27,6 @@ import asyncio
 import contextlib
 import importlib
 import logging
-import hashlib
 import os
 import secrets
 import socket
@@ -38,6 +37,8 @@ import httpx
 from fastapi import FastAPI
 
 from . import __version__
+from .config import env_list
+from .security import agent_identity
 
 log = logging.getLogger(__name__)
 
@@ -120,7 +121,7 @@ class GatewayClient:
     @property
     def identity(self) -> str:
         """Fingerprint of this agent's token; the gateway compares it to tell a restarted agent from a live one."""
-        return hashlib.sha256(self.agent_token.encode()).hexdigest()
+        return agent_identity(self.agent_token)
 
     async def close(self) -> None:
         await self.http.aclose()
@@ -146,8 +147,7 @@ class Agent:
         return self.gw.zone or self.config.get("ZONE", "")
 
     def all_capabilities(self) -> list[str]:
-        extra = [c.strip() for c in self.config.get("AGENT_CAPABILITIES", "").split(",") if c.strip()]
-        return list(dict.fromkeys(self.capabilities + extra))
+        return list(dict.fromkeys(self.capabilities + env_list(self.config.get("AGENT_CAPABILITIES"))))
 
     async def start(self) -> None:
         pass

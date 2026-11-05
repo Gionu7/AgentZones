@@ -33,39 +33,35 @@ def build_server(gateway_url: str, token: str = "", name: str = "mcp") -> MiniMC
     srv = MiniMCPServer("agent-zone", instructions="Talk to AI agents in this and other agent zones. "
                         "Use list_agents to find agents, then send_message to ask one.")
 
-    @srv.tool()
-    def list_agents(capability: str = "") -> list:
-        """List agents in all zones. capability filters, e.g. 'proxy-doctor' or 'fl-client:*'.
-        Each agent's 'accepts' lists the message types it handles and what they contain."""
+    def _directory(capability: str = "") -> list:
         r = http.get("/directory", params={"capability": capability} if capability else None)
         r.raise_for_status()
         return r.json()
 
-    @srv.tool()
-    def send_message(zone: str, agent: str, payload: dict, timeout: float = 60) -> Any:
-        """Send payload to agent in zone and return the reply. Use a message type from the agent's 'accepts'
-        (see list_agents), e.g. {"type": "ask", "question": "..."}. For federated learning use the fl_* tools instead."""
+    def _send(zone: str, agent: str, payload: Any, timeout: float) -> Any:
         r = http.post("/send", json={"from_agent": name, "target_zone": zone, "target_agent": agent,
                                      "payload": payload, "timeout": timeout}, timeout=timeout + 10)
         if r.status_code >= 400:
             raise RuntimeError(f"HTTP {r.status_code}: {r.text[:500]}")
         return r.json()
 
-    def _aggregator(job: str) -> tuple[str, str]:
-        r = http.get("/directory", params={"capability": f"fl-aggregator:{job}"})
-        r.raise_for_status()
-        found = r.json()
-        if not found:
-            raise ValueError(f"no federated-learning job {job!r}; call fl_list_jobs")
-        return found[0]["zone"], found[0]["agent"]
+    @srv.tool()
+    def list_agents(capability: str = "") -> list:
+        """List agents in all zones. capability filters, e.g. 'proxy-doctor' or 'fl-client:*'.
+        Each agent's 'accepts' lists the message types it handles and what they contain."""
+        return _directory(capability)
+
+    @srv.tool()
+    def send_message(zone: str, agent: str, payload: dict, timeout: float = 60) -> Any:
+        """Send payload to agent in zone and return the reply. Use a message type from the agent's 'accepts'
+        (see list_agents), e.g. {"type": "ask", "question": "..."}. For federated learning use the fl_* tools instead."""
+        return _send(zone, agent, payload, timeout)
 
     def _fl(job: str, payload: dict) -> dict:
-        zone, agent = _aggregator(job)
-        r = http.post("/send", json={"from_agent": name, "target_zone": zone, "target_agent": agent,
-                                     "payload": payload, "timeout": 20}, timeout=30)
-        if r.status_code >= 400:
-            raise RuntimeError(f"HTTP {r.status_code}: {r.text[:300]}")
-        out = r.json()
+        found = _directory(f"fl-aggregator:{job}")
+        if not found:
+            raise ValueError(f"no federated-learning job {job!r}; call fl_list_jobs")
+        out = _send(found[0]["zone"], found[0]["agent"], payload, timeout=20)
         if isinstance(out, dict) and out.get("error"):
             raise RuntimeError(out["error"])
         return out
@@ -80,9 +76,7 @@ def build_server(gateway_url: str, token: str = "", name: str = "mcp") -> MiniMC
     @srv.tool()
     def fl_list_jobs() -> list:
         """List federated-learning jobs: name, where the aggregator runs, and the clients."""
-        r = http.get("/directory")
-        r.raise_for_status()
-        entries = r.json()
+        entries = _directory()
         jobs = []
         for e in entries:
             for c in e["capabilities"]:

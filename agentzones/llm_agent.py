@@ -21,7 +21,7 @@ import logging
 from typing import Any
 
 from .agent import Agent, Incoming
-from .config import mcp_servers_from_env, model_from_env
+from .config import env_flag, env_list, mcp_servers_from_env, model_from_env
 from .llm import LLM, LLMUnavailable
 from .tools import Tool, ToolRegistry
 
@@ -47,14 +47,14 @@ class LLMAgent(Agent):
         self.system_prompt = c.get("SYSTEM_PROMPT", "You are a helpful agent inside an Agent Zone. "
                                                    "Use tools to check facts before answering.")
         self.max_steps = int(c.get("MAX_STEPS", "8"))
-        self.accept_remote = c.get("LLM_ACCEPT_REMOTE", "1") not in ("0", "false", "no")
+        self.accept_remote = env_flag(c.get("LLM_ACCEPT_REMOTE"), True)
         self.llm = LLM(model_from_env(c))
         self.tools = ToolRegistry()
         self._register_zone_tools()
         await self.tools.start_mcp(mcp_servers_from_env(c.get("MCP_SERVERS", "")))
-        patterns = [p.strip() for p in c.get("TOOLS", "").split(",") if p.strip()]
-        self.selected = self.tools.select(patterns + ["zone.*"]) if patterns else list(self.tools.tools.values())
-        remote = [p.strip() for p in c.get("LLM_REMOTE_TOOLS", "").split(",") if p.strip()]
+        patterns = env_list(c.get("TOOLS"))
+        self.selected = self.tools.select(patterns + ["zone.*"] if patterns else [])  # no TOOLS: all of them
+        remote = env_list(c.get("LLM_REMOTE_TOOLS"))
         self.remote_tools = [t for t in self.selected if t in self.tools.select(remote)] if remote else []
         self.model_name = self.llm.cfg.model
 

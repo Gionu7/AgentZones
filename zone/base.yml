@@ -38,6 +38,8 @@ services:
       ZONE_API_TOKEN: ${ZONE_API_TOKEN:-}
       AGENT_PORT: "9000"
       AGENT_BLAS_THREADS: ${AGENT_BLAS_THREADS:-2}
+      MODEL_URL: ${MODEL_URL:-http://ollama:11434/v1}   # the zone's model server, for agents that use an LLM
+      MODEL_NAME: ${MODEL_NAME:-qwen2.5:1.5b}
       HTTPS_PROXY: ${AGENT_HTTPS_PROXY:-}
       HTTP_PROXY: ${AGENT_HTTP_PROXY:-}
       NO_PROXY: gateway,ollama,host.docker.internal,localhost,127.0.0.1
@@ -67,8 +69,6 @@ services:
       AGENT_NAME: proxy-doctor
       AGENT_IMPL: proxy_doctor.agent:ProxyDoctor
       DATA_DIR: /data
-      MODEL_URL: ${MODEL_URL:-http://ollama:11434/v1}
-      MODEL_NAME: ${MODEL_NAME:-qwen2.5:1.5b}
 
   assistant:   # generic tool-calling agent on the local model (COMPOSE_PROFILES=llm or host-llm)
     extends: { service: agent }
@@ -76,8 +76,6 @@ services:
     environment:
       AGENT_NAME: assistant
       AGENT_IMPL: agentzones.llm_agent:LLMAgent
-      MODEL_URL: ${MODEL_URL:-http://ollama:11434/v1}
-      MODEL_NAME: ${MODEL_NAME:-qwen2.5:1.5b}
       MCP_SERVERS: '[{"name": "proxy", "command": "python", "args": ["-m", "proxy_doctor.mcp_server"]},
                      {"name": "zone_mcp", "command": "agentzone", "args": ["mcp", "--stdio"]}]'
       TOOLS: proxy.*,zone_mcp.fl_*
@@ -90,8 +88,6 @@ services:
       AGENT_IMPL: agentzones.llm_agent:LLMAgent
       AGENT_DESCRIPTION: Answers questions about the code in this zone (read-only)
       AGENT_CAPABILITIES: code
-      MODEL_URL: ${MODEL_URL:-http://ollama:11434/v1}
-      MODEL_NAME: ${MODEL_NAME:-qwen2.5:1.5b}
       SYSTEM_PROMPT: >-
         You answer questions about the code in the code folder. Use list_files and search to find the
         relevant files, then read_file to read them, and cite file paths and line numbers. Say so when you

@@ -15,6 +15,10 @@ The hub answers with ``X-AZ-Signature`` = HMAC(token, "RES\\n<request nonce>\\ns
 which binds every response to its request: a man in the middle can neither
 change a message nor replay an old answer. It *can* still read the bodies
 (confidentiality needs TLS, see docs/SECURITY.md).
+
+Inside a zone, each agent process sends a random ``X-Agent-Token``; the gateway
+keeps only its :func:`agent_identity` (a hash) and compares it with what the
+agent reports on ``/health``.
 """
 
 from __future__ import annotations
@@ -35,9 +39,18 @@ def _mac(token: str, text: str) -> str:
     return hmac.new(token.encode(), text.encode(), hashlib.sha256).hexdigest()
 
 
+def _request_mac(token: str, method: str, path: str, ts: str, nonce: str, body: bytes) -> str:
+    return _mac(token, f"REQ\n{method.upper()}\n{path}\n{ts}\n{nonce}\n{_digest(body)}")
+
+
+def agent_identity(token: str) -> str:
+    """What the gateway stores for an agent's ``X-Agent-Token``: a fingerprint, never the token."""
+    return _digest(token.encode())
+
+
 def sign_request(token: str, zone: str, method: str, path: str, body: bytes) -> dict[str, str]:
     ts, nonce = str(int(time.time())), secrets.token_hex(16)
-    sig = _mac(token, f"REQ\n{method.upper()}\n{path}\n{ts}\n{nonce}\n{_digest(body)}")
+    sig = _request_mac(token, method, path, ts, nonce, body)
     return {"X-AZ-Zone": zone, "X-AZ-Timestamp": ts, "X-AZ-Nonce": nonce, "X-AZ-Signature": sig}
 
 
@@ -70,8 +83,7 @@ class RequestVerifier:
                 return None, "timestamp outside allowed skew"
         except ValueError:
             return None, "bad timestamp"
-        expected = _mac(token, f"REQ\n{method.upper()}\n{path}\n{ts}\n{nonce}\n{_digest(body)}")
-        if not hmac.compare_digest(expected, sig):
+        if not hmac.compare_digest(_request_mac(token, method, path, ts, nonce, body), sig):
             return None, "bad signature"
         now = time.time()
         if len(self._nonces) > 10_000 or (self._nonces and next(iter(self._nonces.values())) < now - 2 * self.max_skew_s):

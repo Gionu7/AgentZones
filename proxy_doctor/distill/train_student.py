@@ -3,8 +3,8 @@
     python -m proxy_doctor.distill.train_student --data data/distill.jsonl --out models/student.npz
 
 Loss = alpha * CE(teacher soft labels) + (1 - alpha) * CE(generator labels).
-Use the result as ``options.model_path`` of the proxy-doctor agent, or as
-``federated.data.init_from`` so federated rounds start from the distilled model.
+Use the result as ``PD_MODEL_PATH`` of the proxy-doctor agent, or as ``PD_INIT_FROM`` of the
+proxy-student aggregator so federated rounds start from the distilled model.
 """
 
 from __future__ import annotations
@@ -16,8 +16,7 @@ from pathlib import Path
 import numpy as np
 
 from ..features import featurize_many
-from ..student import Student, accuracy, one_hot
-from ..synth import make_dataset
+from ..student import Student, accuracy, benchmark, one_hot
 
 
 def main() -> None:
@@ -35,8 +34,7 @@ def main() -> None:
         (1 - args.alpha) * one_hot([r["label"] for r in rows])
     m = Student()
     loss = m.fit(X, Y, epochs=args.epochs, lr=args.lr)
-    bc, bl = make_dataset(900, "uniform", seed=424242, label_noise=0.0)
-    acc = accuracy(m, featurize_many(bc), bl)
+    acc = accuracy(m, *benchmark())
     m.save(args.out)
     print(f"student: {m.W.size} parameters, loss {loss:.3f}, benchmark accuracy {acc:.1%} -> {args.out}")
 

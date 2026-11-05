@@ -78,9 +78,7 @@ def check_https(url: str, verify: bool = True) -> dict:
 def inspect_tls(host: str) -> dict:
     """Return the issuer of the certificate presented for host and whether TLS looks intercepted."""
     issuer = diagnostics.peer_issuer(host)
-    return {"host": host, "issuer": issuer,
-            "intercepted": None if issuer is None else not any(m in issuer.lower()
-                                                               for m in diagnostics.PUBLIC_CA_MARKERS)}
+    return {"host": host, "issuer": issuer, "intercepted": diagnostics.intercepted(issuer)}
 
 
 @srv.tool()

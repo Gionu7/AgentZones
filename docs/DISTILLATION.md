@@ -68,7 +68,7 @@ python -m proxy_doctor.distill.train_student --data data/distill.jsonl --out mod
 `models/student.npz` in the repo was produced offline, without a teacher, and scores about 98% on the
 synthetic benchmark. To use a student, set either of these:
 
-* `agents[].options.model_path: models/student.npz` uses it as a fixed model.
+* `PD_MODEL_PATH=/path/to/models/student.npz` on the proxy-doctor agent uses it as its model.
 * `PD_INIT_FROM=/path/to/models/student.npz` on the aggregator starts federated rounds from it.
 
 The script also logs how often the teacher disagrees with the generator. This is a useful signal to clean up

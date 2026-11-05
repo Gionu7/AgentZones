@@ -16,13 +16,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from pathlib import Path
 from typing import Any
 
-import numpy as np
-
 from ..agent import Agent, Incoming
-from . import ClientTask, decode, encode, load_plugin
+from . import ClientTask, decode, encode, load_plugin, save_npz
 
 log = logging.getLogger(__name__)
 
@@ -81,10 +78,7 @@ class FLClient(Agent):
             await asyncio.to_thread(self.task.on_global, params)
             out = self.config.get("FL_MODEL_OUT")
             if out:
-                Path(out).parent.mkdir(parents=True, exist_ok=True)
-                tmp = Path(out).with_suffix(".tmp.npz")
-                np.savez_compressed(tmp, **params)
-                tmp.replace(out)
+                save_npz(out, params)
             return {"status": "ok", "saved": bool(out)}
 
     def status(self) -> dict[str, Any]:

@@ -27,41 +27,15 @@ import json
 import logging
 import os
 import re
-import socket
 import sys
 from pathlib import Path
 from typing import Any
 
-import uvicorn
-
 from .agent import AgentHost
 from .gateway import Gateway, GatewaySettings, local_app
+from .localserver import LocalServer, free_port
 
 log = logging.getLogger(__name__)
-
-
-def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-class _Server:
-    def __init__(self, app, port: int):
-        self.server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
-
-    async def __aenter__(self):
-        self.task = asyncio.create_task(self.server.serve())
-        while not self.server.started:
-            if self.task.done():
-                self.task.result()  # raises, e.g. port in use
-                raise RuntimeError("server stopped")
-            await asyncio.sleep(0.05)
-        return self
-
-    async def __aexit__(self, *exc):
-        self.server.should_exit = True
-        await self.task
 
 
 def default_zone() -> str:
@@ -85,13 +59,13 @@ async def run(zone: str, hub_url: str = "", hub_token: str = "", hub_proxy: str 
     settings = GatewaySettings(zone=zone, role="spoke" if hub_url else "standalone", host="127.0.0.1", port=port,
                                hub_url=hub_url.rstrip("/"), hub_token=hub_token, hub_proxy=hub_proxy)
     async with contextlib.AsyncExitStack() as stack:
-        await stack.enter_async_context(_Server(local_app(Gateway(settings)), port))
+        await stack.enter_async_context(LocalServer(local_app(Gateway(settings)), port))
 
         async def agent(name: str, impl: str, **env: str) -> None:
-            p = _free_port()
+            p = free_port()
             host = AgentHost({"AGENT_NAME": name, "AGENT_IMPL": impl, "AGENT_PORT": str(p), "ZONE": zone,
                               "AGENT_URL": f"http://127.0.0.1:{p}", "GATEWAY_URL": gw_url, **env})
-            await stack.enter_async_context(_Server(host.app(), p))
+            await stack.enter_async_context(LocalServer(host.app(), p))
 
         await agent("proxy-doctor", "proxy_doctor.agent:ProxyDoctor", **model_env, PD_PROFILE="dev-laptops",
                     DATA_DIR=str(data / "proxy-doctor"), PD_MODEL_PATH=student)
@@ -117,7 +91,7 @@ async def run(zone: str, hub_url: str = "", hub_token: str = "", hub_proxy: str 
                         FL_MODEL_OUT=student, DATA_DIR=str(data))
         if mcp_port:
             from .mcp_gateway import build_server, http_app
-            await stack.enter_async_context(_Server(http_app(build_server(gw_url, name="mcp")), mcp_port))
+            await stack.enter_async_context(LocalServer(http_app(build_server(gw_url, name="mcp")), mcp_port))
 
         print(f"\nZone {zone} ({settings.role}{' via ' + hub_proxy if hub_proxy else ''}) is running.")
         print(f"  dashboard   {gw_url}/")

@@ -1,4 +1,4 @@
-"""Settings shared by agents: the local model and MCP servers.
+"""Settings shared by agents: the local model, MCP servers, and parsing of environment values.
 
 Zones themselves are configured by environment variables in their compose file
 (zones/<zone>/zone.yml); see gateway.GatewaySettings and agent.AgentHost.
@@ -9,6 +9,18 @@ from __future__ import annotations
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
+
+
+def env_flag(value: str | None, default: bool) -> bool:
+    """``1``, ``true``, ``yes``, ``on`` are true; unset or empty gives ``default``; anything else is false."""
+    if value is None or not value.strip():
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+def env_list(value: str | None) -> list[str]:
+    """``"a, b,,c"`` -> ``["a", "b", "c"]``."""
+    return [x.strip() for x in (value or "").split(",") if x.strip()]
 
 
 class ModelConfig(BaseModel):
@@ -30,8 +42,6 @@ class MCPServerConfig(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     url: str | None = None
     headers: dict[str, str] = Field(default_factory=dict)
-    # Tools other zones may call. "*" = all tools of this server. Default: none.
-    expose: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _one_transport(self) -> "MCPServerConfig":

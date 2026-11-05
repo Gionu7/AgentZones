@@ -29,8 +29,8 @@ from typing import Any
 
 import numpy as np
 
-from agentzones.agent import Agent, GatewayError, Incoming
-from agentzones.config import MCPServerConfig, model_from_env
+from agentzones.agent import Agent, Incoming
+from agentzones.config import MCPServerConfig, env_flag, model_from_env
 from agentzones.knowledge import FixStore
 from agentzones.llm import LLM, LLMUnavailable
 from agentzones.tools import ToolRegistry
@@ -52,10 +52,6 @@ def sanitize(obs: dict[str, Any]) -> dict[str, Any]:
     return {k: obs[k] for k in SHARE_KEYS if k in obs}
 
 
-def _bool(v: str | None, default: bool) -> bool:
-    return default if v is None or v == "" else v.strip().lower() in ("1", "true", "yes", "on")
-
-
 class ProxyDoctor(Agent):
     capabilities = [CAPABILITY, "chat"]
     description = "Diagnoses and fixes corporate proxy and certificate problems"
@@ -70,9 +66,9 @@ class ProxyDoctor(Agent):
     async def start(self) -> None:
         c = self.config
         self.threshold = float(c.get("PD_THRESHOLD", "0.75"))
-        self.auto_apply = _bool(c.get("PD_AUTO_APPLY"), False)
-        self.share = _bool(c.get("PD_SHARE_FIXES"), True)
-        self.use_llm = _bool(c.get("PD_EXPLAIN_WITH_LLM"), True)
+        self.auto_apply = env_flag(c.get("PD_AUTO_APPLY"), False)
+        self.share = env_flag(c.get("PD_SHARE_FIXES"), True)
+        self.use_llm = env_flag(c.get("PD_EXPLAIN_WITH_LLM"), True)
         self.peer_timeout = float(c.get("PD_PEER_TIMEOUT_S", "30"))
         self.fixes = FixStore(Path(c.get("DATA_DIR", "/data")) / "fixes.json")
         self.llm = LLM(model_from_env(c))
@@ -89,7 +85,6 @@ class ProxyDoctor(Agent):
                                      seed=int(c.get("PD_SEED", "7")))
         self._model = Student()
         self._model.fit(featurize_many(cases), one_hot(labels), epochs=300, lr=0.5)
-        self.events: list[str] = []
 
     async def stop(self) -> None:
         await self.tools.close()

@@ -27,8 +27,10 @@ from typing import Any, Callable
 
 import httpx
 
+from . import __version__
+
 PROTOCOL_VERSION = "2025-06-18"
-CLIENT_INFO = {"name": "agentzones", "version": "0.1.0"}
+CLIENT_INFO = {"name": "agentzones", "version": __version__}
 
 
 @dataclass
@@ -247,7 +249,7 @@ class MiniMCPServer:
         srv.run()
     """
 
-    def __init__(self, name: str, version: str = "0.1.0", instructions: str = ""):
+    def __init__(self, name: str, version: str = __version__, instructions: str = ""):
         self.name, self.version, self.instructions = name, version, instructions
         self._tools: dict[str, tuple[Callable, MCPTool]] = {}
 

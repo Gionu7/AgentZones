@@ -42,19 +42,12 @@ from typing import Any
 import numpy as np
 
 from ..agent import Agent, GatewayError, Incoming
-from . import FitResult, Parameters, Strategy, check_shapes, decode, encode, load_plugin
+from ..config import env_flag, env_list
+from . import FitResult, Parameters, Strategy, check_shapes, decode, encode, load_plugin, save_npz
 
 log = logging.getLogger(__name__)
 
 ACTIVE = ("waiting_for_clients", "running")
-
-
-def _bool(v: str | None, default: bool) -> bool:
-    return default if v is None or v == "" else v.strip().lower() in ("1", "true", "yes", "on")
-
-
-def _csv(v: str | None) -> set[str]:
-    return {x.strip() for x in (v or "").split(",") if x.strip()}
 
 
 def update_norm(new: Parameters, old: Parameters) -> float:
@@ -86,8 +79,8 @@ class FLAggregator(Agent):
         self.max_retries = int(c.get("FL_MAX_ROUND_RETRIES", "3"))
         self.poll_s = float(c.get("FL_POLL_S", "2"))
         self.model_dir = Path(c.get("FL_MODEL_DIR", "/models"))
-        self.control_zones = _csv(c.get("FL_CONTROL_ZONES"))
-        self.operators = _csv(c.get("FL_OPERATORS", "operator,cli,dashboard-operator"))
+        self.control_zones = set(env_list(c.get("FL_CONTROL_ZONES")))
+        self.operators = set(env_list(c.get("FL_OPERATORS", "operator,cli,dashboard-operator")))
         self.approval = c.get("FL_APPROVAL", "required").strip().lower()
         self.max_rounds = int(c.get("FL_MAX_ROUNDS", "50"))
         self.cooldown = float(c.get("FL_COOLDOWN_S", "0"))
@@ -114,7 +107,7 @@ class FLAggregator(Agent):
         if not spec:
             raise ValueError("FL_STRATEGY is required (module:Class of a Strategy)")
         self.strategy = await asyncio.to_thread(load_plugin, spec, self.config)
-        if _bool(self.config.get("FL_AUTOSTART"), True):
+        if env_flag(self.config.get("FL_AUTOSTART"), True):
             self.start_run(who="autostart")
         if self.schedule > 0:
             self._sched = asyncio.create_task(self._schedule_loop())
@@ -393,10 +386,6 @@ class FLAggregator(Agent):
 
     def _save(self) -> None:
         assert self.parameters is not None
-        self.model_dir.mkdir(parents=True, exist_ok=True)
-        path = self.model_dir / f"{self.job}-latest.npz"
-        tmp = path.with_suffix(".tmp.npz")
-        np.savez_compressed(tmp, **self.parameters)
-        tmp.replace(path)
+        save_npz(self.model_dir / f"{self.job}-latest.npz", self.parameters)
         (self.model_dir / f"{self.job}-latest.json").write_text(json.dumps(
             {"job": self.job, "run": self.run_id, "round": self.round, "history": self.history}, indent=2))

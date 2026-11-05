@@ -5,7 +5,7 @@ Pieces:
   diagnostics  real checks on this machine (+ a simulator for demos/tests)
   features     observation -> feature vector
   synth        synthetic failure cases (training data, per-site skew)
-  student      small softmax classifier, distillable + federated (FL task)
+  student      small softmax classifier, distillable; trained federated by tasks/proxy_student.py
   mcp_server   MCP server exposing the diagnostic/fix tools
   agent        the Agent Zone agent that ties it together
 """

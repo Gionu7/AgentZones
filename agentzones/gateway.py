@@ -30,7 +30,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import fnmatch
-import hashlib
 import hmac
 import json
 import logging
@@ -48,7 +47,8 @@ from fastapi.responses import JSONResponse, Response
 from . import __version__
 from .dashboard import add_dashboard
 from .hub import Hub, Message, RoutingError, clean_accepts
-from .security import RequestVerifier, parse_tokens, sign_request, sign_response, verify_response
+from .security import (RequestVerifier, agent_identity, parse_tokens, sign_request, sign_response,
+                       verify_response)
 
 log = logging.getLogger(__name__)
 
@@ -184,7 +184,7 @@ class Gateway:
     async def register_agent(self, name: str, url: str, capabilities: list[str], description: str = "",
                              token: str = "", version: str = "", accepts: dict[str, str] | None = None) -> None:
         """Add or refresh a local agent. Raises PermissionError if a live agent with another token has the name."""
-        identity = _identity(token) if token else ""
+        identity = agent_identity(token) if token else ""
         held = self.live_agents().get(name)
         if held and held["identity"] and not hmac.compare_digest(held["identity"], identity):
             if await self._still_there(held):
@@ -208,7 +208,7 @@ class Gateway:
     def sender(self, token: str, claimed: str) -> str:
         """The from_agent of a local send: the token's agent, or the claimed name if no live agent owns it."""
         if token:
-            identity = _identity(token)
+            identity = agent_identity(token)
             for name, a in self.live_agents().items():
                 if a["identity"] and hmac.compare_digest(a["identity"], identity):
                     return name
@@ -378,10 +378,6 @@ class Gateway:
         return out
 
 
-def _identity(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
-
-
 # ---------------------------------------------------------------------- HTTP apps
 
 def local_app(gw: Gateway) -> FastAPI:
@@ -446,9 +442,7 @@ def local_app(gw: Gateway) -> FastAPI:
             raise HTTPException(504, str(exc))
         except (RoutingError, LookupError) as exc:
             raise HTTPException(404, str(exc))
-        except ConnectionError as exc:
-            raise HTTPException(502, str(exc))
-        except RuntimeError as exc:
+        except (ConnectionError, RuntimeError) as exc:
             raise HTTPException(502, str(exc))
 
     return app
