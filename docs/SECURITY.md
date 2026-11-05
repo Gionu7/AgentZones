@@ -25,6 +25,24 @@ the spoke). The token is an HMAC key and is **never sent**:
 * Every hub answer carries `X-AZ-Signature = HMAC(token, "RES\n<request nonce>\nsha256(body)")`. The spoke
   checks it, so it cannot be fed forged or replayed messages either.
 
+```mermaid
+sequenceDiagram
+  participant S as spoke b
+  participant P as proxy on the path
+  participant H as hub
+  S->>S: sig = HMAC(token, method, path, time, nonce, sha256(body))
+  S->>P: request + X-AZ-Zone, -Timestamp, -Nonce, -Signature (no token)
+  P->>H: forwarded (can read it, but any change breaks the signature)
+  H->>H: known zone? signature? time within 120 s? nonce new?
+  alt all checks pass
+    H->>P: answer + X-AZ-Signature = HMAC(token, "RES", this nonce, body)
+    P->>S: forwarded
+    S->>S: answer signed for MY nonce? (no forged or replayed answers)
+  else any check fails
+    H->>P: 401, logged as a rejected request
+  end
+```
+
 What a spoke's token allows: fetching **its own** mailbox, registering **its own** agents, sending requests
 **as itself**, and answering requests that were **sent to it**. A stolen token lets an attacker act as that
 one zone, not as any other; rotate it on the hub and that spoke only.

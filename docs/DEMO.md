@@ -33,6 +33,8 @@ Open the hub dashboard at http://127.0.0.1:8080/ and keep it on screen for the w
 the story: Overview, Network, Learning, Agents, Security. With
 `scripts/demo.py --keep`, click *Start run* to replay federated learning live.
 
+<img src="images/dashboard-overview.png" alt="The hub dashboard's Overview page during a federated-learning run" width="900">
+
 ## Story
 
 1. **Hub and spoke.** On the dashboard, b and cn are green and polling the hub, b through its proxy, and

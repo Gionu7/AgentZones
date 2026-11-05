@@ -13,6 +13,24 @@ LM Studio, llama.cpp's `llama-server` and vLLM work too, but you load the model 
 The model is optional. Proxy Doctor decides with its own small classifier and only uses the LLM to word its
 explanation; with no model it explains from a template. Only the `assistant` agent needs an LLM.
 
+```mermaid
+flowchart LR
+  subgraph sources["MODEL_SOURCE"]
+    lib["Ollama library<br/>llama3.2:3b"]
+    hf["Hugging Face<br/>hf.co/org/repo:Q4_K_M"]
+    url["HTTPS .gguf<br/>mirror, Azure blob"]
+    file["file<br/>/local-models/x.gguf"]
+  end
+  aml[("Azure ML registry")] -. "az ml model download,<br/>once" .-> file
+  lib --> setup["agentzone model setup"]
+  hf --> setup
+  url --> setup
+  file --> setup
+  setup -- "Ollama HTTP API" --> ollama["Ollama<br/>(zone container or laptop)"]
+  agents["agents"] -- "MODEL_URL + MODEL_NAME<br/>OpenAI API" --> ollama
+  agents -. "or any OpenAI-compatible server" .-> other["LM Studio, llama-server, vLLM"]
+```
+
 ## Which model
 
 Sizes are for 4-bit (Q4) versions. Check each licence for your use.
@@ -64,6 +82,17 @@ read-only SAS URL of the model's blob as `MODEL_SOURCE`; it is only needed for t
 model is shown in [DISTILLATION.md](DISTILLATION.md).
 
 ## Docker zones
+
+```mermaid
+flowchart TD
+  start(["where does the zone run?"]) --> laptop{"a personal or work laptop?"}
+  laptop -- "yes" --> native["agentzone laptop<br/>(no Docker; Ollama installed natively)"]
+  laptop -- "no: a server or VM" --> mac{"model server already on the host,<br/>or a Mac?"}
+  mac -- "yes" --> hostllm["COMPOSE_PROFILES=host-llm<br/>MODEL_URL: host.docker.internal:11434/v1"]
+  mac -- "no" --> gpu{"NVIDIA GPU?"}
+  gpu -- "yes" --> llmgpu["AGENTZONES_GPU=1 COMPOSE_PROFILES=llm"]
+  gpu -- "no" --> llmcpu["COMPOSE_PROFILES=llm<br/>(a small model on the CPU)"]
+```
 
 | | Command |
 |---|---|
