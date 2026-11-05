@@ -8,6 +8,13 @@ Local API (zone network only, published on 127.0.0.1)::
     GET  /status, /health
     GET  /  and /dashboard/data                                     the zone dashboard (dashboard.py)
 
+Agents send ``X-Agent-Token`` (a random secret per agent process). The first
+token to register a name holds it while that agent is alive; another token is
+refused unless the agent at the registered URL no longer answers with the old
+identity (it restarted, or it is gone). On ``/send`` an agent's token decides
+``from_agent``; callers without one (operators, the MCP server) may not use the
+name of a registered agent.
+
 Hub API (role ``hub`` only, a separate port that spokes reach)::
 
     POST /hub/register  GET /hub/poll?wait=20  POST /hub/ack  POST /hub/send  GET /hub/directory
@@ -23,6 +30,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import fnmatch
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -38,7 +47,7 @@ from fastapi.responses import JSONResponse, Response
 
 from . import __version__
 from .dashboard import add_dashboard
-from .hub import Hub, Message, RoutingError
+from .hub import Hub, Message, RoutingError, clean_accepts
 from .security import RequestVerifier, parse_tokens, sign_request, sign_response, verify_response
 
 log = logging.getLogger(__name__)
@@ -172,18 +181,49 @@ class Gateway:
         log.info("[%s] %s", kind, msg)
 
     # ------------------------------------------------------------------ local agents
-    def register_agent(self, name: str, url: str, capabilities: list[str], description: str = "") -> None:
-        if name not in self.agents:
+    async def register_agent(self, name: str, url: str, capabilities: list[str], description: str = "",
+                             token: str = "", version: str = "", accepts: dict[str, str] | None = None) -> None:
+        """Add or refresh a local agent. Raises PermissionError if a live agent with another token has the name."""
+        identity = _identity(token) if token else ""
+        held = self.live_agents().get(name)
+        if held and held["identity"] and not hmac.compare_digest(held["identity"], identity):
+            if await self._still_there(held):
+                self.event("security", f"refused registration of {name}: the name belongs to a live agent")
+                raise PermissionError(f"agent {name!r} is registered by another live process")
+            self.event("agent", f"agent {name} re-registered (previous process is gone)")
+        elif name not in self.agents:
             self.event("agent", f"agent {name} registered ({', '.join(capabilities) or 'no capabilities'})")
-        self.agents[name] = {"url": url.rstrip("/"), "capabilities": capabilities,
-                             "description": description, "seen": time.time()}
+        self.agents[name] = {"url": url.rstrip("/"), "capabilities": capabilities, "description": description,
+                             "version": version, "accepts": accepts or {}, "identity": identity,
+                             "seen": time.time()}
+
+    async def _still_there(self, agent: dict[str, Any]) -> bool:
+        """True if the agent at the registered URL still reports the registered identity."""
+        try:
+            r = await self.http.get(agent["url"] + "/health", timeout=2)
+            return hmac.compare_digest(str(r.json().get("identity") or ""), agent["identity"])
+        except Exception:
+            return False
+
+    def sender(self, token: str, claimed: str) -> str:
+        """The from_agent of a local send: the token's agent, or the claimed name if no live agent owns it."""
+        if token:
+            identity = _identity(token)
+            for name, a in self.live_agents().items():
+                if a["identity"] and hmac.compare_digest(a["identity"], identity):
+                    return name
+        held = self.live_agents().get(claimed)
+        if held and held["identity"]:
+            raise PermissionError(f"from_agent {claimed!r} is a registered agent; only that agent may send as it")
+        return claimed
 
     def live_agents(self) -> dict[str, dict[str, Any]]:
         now = time.time()
         return {n: a for n, a in self.agents.items() if now - a["seen"] <= self.s.agent_ttl_s}
 
     def local_entries(self) -> list[dict[str, Any]]:
-        return [{"zone": self.zone, "agent": n, "capabilities": a["capabilities"], "description": a["description"]}
+        return [{"zone": self.zone, "agent": n, "capabilities": a["capabilities"], "description": a["description"],
+                 "version": a["version"], "accepts": a["accepts"]}
                 for n, a in sorted(self.live_agents().items())]
 
     async def directory(self, capability: str | None = None) -> list[dict[str, Any]]:
@@ -338,6 +378,10 @@ class Gateway:
         return out
 
 
+def _identity(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 # ---------------------------------------------------------------------- HTTP apps
 
 def local_app(gw: Gateway) -> FastAPI:
@@ -370,12 +414,16 @@ def local_app(gw: Gateway) -> FastAPI:
         return gw.status()
 
     @app.post("/agents/register")
-    async def register(body: dict[str, Any]):
+    async def register(request: Request, body: dict[str, Any]):
         name, url = body.get("name"), body.get("url")
         if not name or not url:
             raise HTTPException(400, "name and url are required")
-        gw.register_agent(str(name), str(url), [str(c) for c in body.get("capabilities") or []],
-                          str(body.get("description") or ""))
+        try:
+            await gw.register_agent(str(name), str(url), [str(c) for c in body.get("capabilities") or []],
+                                    str(body.get("description") or ""), request.headers.get("x-agent-token", ""),
+                                    str(body.get("version") or "")[:40], clean_accepts(body.get("accepts")))
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc))
         return {"ok": True, "zone": gw.zone, "ttl_s": gw.s.agent_ttl_s}
 
     @app.get("/directory")
@@ -383,11 +431,16 @@ def local_app(gw: Gateway) -> FastAPI:
         return await gw.directory(capability)
 
     @app.post("/send")
-    async def send(body: dict[str, Any]):
+    async def send(request: Request, body: dict[str, Any]):
         if not body.get("target_agent"):
             raise HTTPException(400, "target_agent is required")
         try:
-            return await gw.send(str(body.get("from_agent") or "operator"), str(body.get("target_zone") or gw.zone),
+            sender = gw.sender(request.headers.get("x-agent-token", ""), str(body.get("from_agent") or "operator"))
+        except PermissionError as exc:
+            gw.event("security", f"refused send: {exc}")
+            raise HTTPException(403, str(exc))
+        try:
+            return await gw.send(sender, str(body.get("target_zone") or gw.zone),
                                  str(body["target_agent"]), body.get("payload"), body.get("timeout"))
         except TimeoutError as exc:
             raise HTTPException(504, str(exc))

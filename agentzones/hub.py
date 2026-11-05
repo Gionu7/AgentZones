@@ -44,6 +44,13 @@ class Mailbox:
     waiting: int = 0  # long polls currently open
 
 
+def clean_accepts(v: Any) -> dict[str, str]:
+    """A directory entry's message types, size-limited (they travel through the hub to every zone)."""
+    if not isinstance(v, dict):
+        return {}
+    return {str(k)[:64]: str(d)[:300] for k, d in list(v.items())[:50]}
+
+
 class RoutingError(Exception):
     pass
 
@@ -68,7 +75,8 @@ class Hub:
     # ------------------------------------------------------------------ directory
     def register(self, zone: str, agents: list[dict[str, Any]], info: dict[str, Any] | None = None) -> None:
         clean = [{"agent": str(a.get("agent") or a.get("name")), "capabilities": list(a.get("capabilities") or []),
-                  "description": str(a.get("description") or "")[:300]} for a in agents[:200]]
+                  "description": str(a.get("description") or "")[:300], "version": str(a.get("version") or "")[:40],
+                  "accepts": clean_accepts(a.get("accepts"))} for a in agents[:200]]
         info = {"via_proxy": bool((info or {}).get("via_proxy")), "version": str((info or {}).get("version", ""))[:20]}
         self.directory[zone] = {"agents": clean, "seen": time.time(), "info": info}
 
