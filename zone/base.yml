@@ -8,6 +8,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
+      extra_hosts: ["${DOCKER_PROXY_HOST:-proxy.internal}:${DOCKER_PROXY_IP:-host-gateway}"]
       args: { HTTP_PROXY: "${BUILD_HTTP_PROXY:-}", HTTPS_PROXY: "${BUILD_HTTPS_PROXY:-}", APT_PACKAGES: "${APT_PACKAGES-git}" }
     command: ["agentzone", "gateway"]
     environment:
@@ -41,7 +42,9 @@ services:
       HTTPS_PROXY: ${AGENT_HTTPS_PROXY:-}
       HTTP_PROXY: ${AGENT_HTTP_PROXY:-}
       NO_PROXY: gateway,ollama,host.docker.internal,localhost,127.0.0.1
-    extra_hosts: ["host.docker.internal:host-gateway"]   # a model server on the host (host-llm)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # a model server on the host (host-llm)
+      - "${DOCKER_PROXY_HOST:-proxy.internal}:${DOCKER_PROXY_IP:-host-gateway}"
     volumes:
       - ${HOST_CA_BUNDLE:-/dev/null}:/etc/agentzones/extra-ca.crt:ro
     restart: unless-stopped
