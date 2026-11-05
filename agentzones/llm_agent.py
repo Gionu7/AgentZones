@@ -39,6 +39,7 @@ def _short(obj: Any, n: int = 6000) -> str:
 class LLMAgent(Agent):
     capabilities = ["llm", "chat"]
     description = "General assistant using this zone's tools and agents"
+    accepts = {"ask": "{question, context?} -> {answer, ...}; other zones only if the assistant allows it"}
 
     async def start(self) -> None:
         c = self.config
@@ -64,13 +65,15 @@ class LLMAgent(Agent):
     def _register_zone_tools(self) -> None:
         t = self.tools
 
-        @t.builtin("list_agents", "List agents in all zones, optionally only those with a capability.", {
+        @t.builtin("list_agents", "List agents in all zones, optionally only those with a capability. "
+                   "Each agent's 'accepts' lists the message types it handles and what they contain.", {
             "type": "object", "properties": {"capability": {"type": "string"}}})
         async def _list(args):
             return await self.gw.directory(args.get("capability") or None)
 
         @t.builtin("send_message", "Send a message to an agent (in any zone) and return its reply. "
-                   "For other assistants use payload {\"type\": \"ask\", \"question\": ...}.", {
+                   "Use a payload type from the agent's 'accepts' (see list_agents), e.g. "
+                   "{\"type\": \"ask\", \"question\": ...}.", {
                        "type": "object", "required": ["zone", "agent", "payload"], "properties": {
                            "zone": {"type": "string"}, "agent": {"type": "string"},
                            "payload": {"type": "object"}}})
@@ -86,7 +89,7 @@ class LLMAgent(Agent):
     async def handle(self, msg: Incoming) -> Any:
         p = msg.payload if isinstance(msg.payload, dict) else {"type": "ask", "question": str(msg.payload)}
         if p.get("type", "ask") != "ask":
-            return {"error": f"unknown message type {p.get('type')!r}", "accepts": ["ask"]}
+            return self.unknown(p.get("type"))
         if not msg.local and not self.accept_remote:
             return {"error": f"{self.name} only answers its own zone"}
         _hops.set(int(p.get("hops", 0)))

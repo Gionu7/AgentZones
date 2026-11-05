@@ -62,6 +62,16 @@ def update_norm(new: Parameters, old: Parameters) -> float:
 
 
 class FLAggregator(Agent):
+    accepts = {
+        "fl.status": "{} -> job, state, round, rounds, history, pending, audit",
+        "fl.start": "{rounds?, resume?, reason?}: operators only (FL_OPERATORS) -> status",
+        "fl.stop": "{reason?}: operators only -> status",
+        "fl.request": "{action: start|stop, rounds?, reason}: anyone; waits for an operator unless "
+                      "FL_APPROVAL=auto -> {pending: id}",
+        "fl.approve": "{id}: operators only; runs a pending request -> status",
+        "fl.reject": "{id, reason?}: operators only -> status",
+    }
+
     def __init__(self, *a: Any, **kw: Any):
         super().__init__(*a, **kw)
         c = self.config
@@ -169,8 +179,7 @@ class FLAggregator(Agent):
         if t == "fl.status":
             return self.status()
         if t not in ("fl.start", "fl.stop", "fl.request", "fl.approve", "fl.reject"):
-            return {"error": f"unknown message type {t!r}",
-                    "accepts": ["fl.status", "fl.start", "fl.stop", "fl.request", "fl.approve", "fl.reject"]}
+            return self.unknown(t)
         if self.control_zones and msg.from_zone not in self.control_zones:
             self._log(who, t, "refused", why="zone not in FL_CONTROL_ZONES")
             return {"error": f"zone {msg.from_zone} may not control job {self.job}"}

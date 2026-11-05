@@ -49,6 +49,23 @@ one zone, not as any other; rotate it on the hub and that spoke only.
 
 The gateways log a warning while `dev-token-*` defaults are in use, or if two spokes share a token.
 
+## Agents inside a zone
+
+Every agent process makes up a random secret when it starts and sends it as `X-Agent-Token` on each call to
+its gateway. Nothing needs to be configured.
+
+* **Names:** the first token to register a name holds it. Another registration of that name (with a different
+  token or none) is refused with HTTP 403, unless the agent at the registered URL no longer reports the old
+  identity on `/health` (a SHA-256 of its token): then it restarted or is gone, and the new process takes the
+  name over. A rogue container in the zone can therefore not take over a running agent's name and receive its
+  messages (for example `pd.consult` and `pd.fix` for `proxy-doctor`).
+* **Senders:** on `/send` the gateway sets `from_agent` from the token. Callers without an agent token (the
+  CLI, the MCP server, `curl` on the host) may use any name that no registered agent holds; the default is
+  `operator`.
+* **Limits:** bindings live in the gateway's memory. After a gateway restart the first agent to re-register a
+  name gets it, which within ~10 s is normally the real one. Anything on the zone network can still call an
+  agent's `POST /message` directly, bypassing the gateway; keep the zone network to the zone's own containers.
+
 ## What a proxy on the path can and cannot do
 
 | | plain HTTP (zone b today) | HTTPS to the hub |
@@ -80,7 +97,10 @@ So, best first:
   Only operators (`FL_OPERATORS`) start and stop runs; everyone else, including LLM agents through the MCP
   tools, sends a request that an operator approves. Rounds per start are capped (`FL_MAX_ROUNDS`), there is
   an optional cooldown, `FL_CONTROL_ZONES` limits which zones may control a job, and every decision is in the
-  audit log. Sender names are self-reported inside a zone: the trust boundary is the zone's local API.
+  audit log. An agent can only send under its own name (see [Agents inside a zone](#agents-inside-a-zone)), so
+  an LLM agent cannot pose as an operator. Callers without an agent token (the CLI, the dashboard) choose their
+  own name, so the trust boundary for operators is still the zone's local API. Don't give an agent an operator's
+  name.
 * **LLM agents:** answer other zones with the model only. Tools are off for them unless the owner lists some
   in `LLM_REMOTE_TOOLS` (the tools are not offered to the model, and calls to others are refused);
   `LLM_ACCEPT_REMOTE=0` refuses other zones altogether. Agent-to-agent chains stop after two hops.

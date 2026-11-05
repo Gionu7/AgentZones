@@ -25,7 +25,10 @@ flowchart LR
   agents (30 s TTL) and routes messages: to a local agent, to the hub (spoke), or into a mailbox (hub).
 * **Agents** ([agentzones/agent.py](../agentzones/agent.py)): one container each, all from the same image.
   `AgentHost` serves `POST /message` and re-registers with the gateway every 10 s. Agents see the gateway
-  through `GatewayClient.directory()` and `GatewayClient.send()`, nothing else.
+  through `GatewayClient.directory()`, `send()` and `send_all()` (directory + send to each match), nothing
+  else. Directory entries carry `zone`, `agent`, `capabilities`, `description`, `version` and `accepts`
+  (message type → payload description). Every call carries the agent's `X-Agent-Token`, see
+  [SECURITY.md](SECURITY.md#agents-inside-a-zone).
 * **MCP server** ([agentzones/mcp_gateway.py](../agentzones/mcp_gateway.py)): `list_agents` and
   `send_message` over streamable HTTP (`POST /mcp`) or stdio, for Claude Desktop, IDEs and other MCP clients.
 * **Dashboard** ([agentzones/dashboard.py](../agentzones/dashboard.py)): `GET /` and `GET /dashboard/data` on

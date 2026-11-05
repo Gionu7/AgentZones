@@ -54,12 +54,19 @@ Agents only ever talk to their own zone's gateway:
 
 | Call | Purpose |
 |---|---|
-| `GET /directory?capability=...` | agents in all zones (`*` wildcards work, e.g. `fl-client:*`) |
+| `GET /directory?capability=...` | agents in all zones (`*` wildcards work, e.g. `fl-client:*`), with each agent's `version` and `accepts` |
 | `POST /send {target_zone, target_agent, payload, timeout?}` | send a request, get the reply |
-| `POST /agents/register {name, url, capabilities}` | done for you by the agent host |
+| `POST /agents/register {name, url, capabilities, version, accepts}` | done for you by the agent host |
 
 An agent is a subclass of `agentzones.agent.Agent` with one method, `async handle(msg) -> reply`, run by
 `agentzone agent` with `AGENT_IMPL=module:Class`. `msg.local` tells you whether the sender is in your own zone.
+Set `accepts` on the class to the message types it handles, e.g. `{"fl.status": "{} -> state, round"}`; it is
+published in the directory, so other agents, MCP clients and LLM agents know what they can send.
+`self.gw.send_all(capability, payload)` sends to every matching agent at once and returns their replies.
+
+Each agent process sends a random secret with its calls, made up at start; there is nothing to configure. A
+live agent's name cannot be registered by another container, and a send is always marked with the name of the
+agent that sent it. See [docs/SECURITY.md](docs/SECURITY.md#agents-inside-a-zone).
 
 ## Generic federated learning
 
