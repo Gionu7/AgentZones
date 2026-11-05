@@ -48,5 +48,8 @@ services:
   ollama:
     extends: { file: ../../zone/base.yml, service: ollama }
     volumes: [ollama:/root/.ollama]
+  model-setup:
+    extends: { file: ../../zone/base.yml, service: model-setup }
+    volumes: [models-cache:/models-cache]
 
-volumes: { mnist-data: {}, aggregator-data: {}, models: {}, pd-data: {}, ollama: {} }
+volumes: { mnist-data: {}, aggregator-data: {}, models: {}, pd-data: {}, ollama: {}, models-cache: {} }

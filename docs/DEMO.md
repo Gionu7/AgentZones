@@ -29,10 +29,14 @@ COMPOSE_PROFILES=sim scripts/zone.sh b
 Add `COMPOSE_PROFILES=llm` (for example `COMPOSE_PROFILES=sim,llm` for b) to get Ollama and LLM-written
 explanations.
 
+Open the hub dashboard at http://127.0.0.1:8080/ and keep it on screen for the whole demo. Its pages follow
+the story: Overview, Network, Learning, Agents, Security. With
+`scripts/demo.py --keep`, click *Start run* to replay federated learning live.
+
 ## Story
 
-1. **Hub and spoke.** Show `curl -s localhost:8080/status`: the hub sees spokes b and cn polling, and neither
-   accepts connections. In b, show that the gateway can't reach the hub or the internet directly:
+1. **Hub and spoke.** On the dashboard, b and cn are green and polling the hub, b through its proxy, and
+   neither accepts connections. In b, show that the gateway can't reach the hub or the internet directly:
 
    ```bash
    docker exec zone-b-gateway-1 python -c "import urllib.request as u; u.urlopen('http://hub:9090/health', timeout=3)"
@@ -45,7 +49,9 @@ explanations.
    ```
 
 2. **Federated learning across three networks.** The aggregator lives in b, behind the proxy. Clients in az, b
-   and cn each hold a third of MNIST. Follow the rounds (about 91% after one round, about 95% after five):
+   and cn each hold a third of MNIST. On the dashboard, the weights travel b → proxy → hub → az / cn and back
+   each round, and the accuracy chart climbs (about 91% after one round, about 95% after five). The traffic log
+   shows the size of every update: only weights move, never data. In the logs:
 
    ```bash
    scripts/zone.sh b logs -f mnist-aggregator
@@ -78,8 +84,19 @@ explanations.
    The fix is only applied on a simulated machine if the zone runs with `PD_AUTO_APPLY=1`. `scripts/demo.py`
    does that; the Docker zones only propose fixes by default.
 
-5. **Security.** Tokens never cross the proxy. A spoke with a wrong token is rejected, and a proxy that edits a
-   message breaks its signature (`pytest tests/test_zones_e2e.py -k tampering`).
+5. **An LLM asks, a person decides.** `scripts/demo.py --keep` leaves a request from `assistant@az` waiting.
+   On the dashboard's *Learning* page, show the request with its reason, the limits, and the audit log, then
+   click **Approve** and watch the lifecycle diagram move to *running*. With Docker and `COMPOSE_PROFILES=llm`,
+   ask the `assistant` agent to retrain; it can only call `fl_request_start`.
+
+6. **Ask.** On the *Ask* page, ask `code-assistant@az` how the hub decides that a spoke is offline, and open
+   *How it answered* to show the search and the file it read. Ask `proxy-doctor@az` about an SSL error with
+   *simulate: untrusted corp ca*, then ask `proxy-doctor@b` the same: it answers from the text only, through
+   the hub and b's proxy. Needs `scripts/demo.py --keep --llm` (or `COMPOSE_PROFILES=llm`) and a local model.
+
+7. **Security.** Tokens never cross the proxy. A spoke with a wrong token is rejected and appears in red under
+   *Rejected requests* and *Events*. A proxy that edits a message breaks its signature
+   (`pytest tests/test_zones_e2e.py -k tampering`).
 
 ## Talking points
 

@@ -27,6 +27,11 @@
   [SECURITY.md](SECURITY.md#agents-inside-a-zone).
 * **MCP server** ([agentzones/mcp_gateway.py](../agentzones/mcp_gateway.py)): `list_agents` and
   `send_message` over streamable HTTP (`POST /mcp`) or stdio, for Claude Desktop, IDEs and other MCP clients.
+* **Dashboard** ([agentzones/dashboard.py](../agentzones/dashboard.py)): `GET /` and `GET /dashboard/data` on
+  the local API. The gateway gathers the data itself (FL status every 1.5 s, Proxy Doctor status every 8 s,
+  shared by all open tabs) by sending messages as agent `dashboard`. The hub keeps a ring buffer of the last
+  300 messages it routed (type, size, sender, receiver; no payloads) and per-route totals. Spokes report
+  whether they use a proxy when they register; the hub tells them its zone name in return.
 * **LLM agent** ([agentzones/llm_agent.py](../agentzones/llm_agent.py)): a tool-calling loop on the local
   model with MCP tools plus `zone.list_agents` and `zone.send_message`. Agent-to-agent chains stop after two
   hops.
@@ -60,6 +65,11 @@ wakes up for it. Mailboxes hold at most 1000 messages per spoke.
 
 ### Routing rules on the hub
 
+* A spoke is **online** while it has a long poll open or polled in the last 30 s. Offline spokes' agents are
+  left out of the directory, and requests for them are refused at once.
+* Routing is idempotent: the hub remembers message ids per sender for 10 minutes, so a send retried after a
+  lost response is not routed twice (and a retried reply is not refused).
+
 * A request's `from_zone` is always the authenticated sender, whatever the message says.
 * A request for an unknown zone is refused (HTTP 403, `/send` returns 404).
 * When a request is routed, the hub remembers `(from_zone, to_zone)` for it. A reply is accepted only from
@@ -78,6 +88,17 @@ aggregator (b)                         hub (az)                 clients (az, b, 
             check shapes, aggregate_fit(), evaluate(), save /models/mnist-latest.npz
   done:     fl.model {parameters} ───────────────────────────► on_global(), FL_MODEL_OUT
 ```
+
+Before averaging, the aggregator screens the updates: names, shapes and NaN; `FL_MAX_SAMPLES` caps claimed
+sample counts; updates whose distance from the global model is over `FL_MAX_UPDATE_RATIO` × the median are
+dropped (with 3 or more updates). Each round's history keeps, per client: status, samples, share in the
+average, update size, time and its own metrics. The dashboard draws these.
+
+Starting and stopping: operators (`FL_OPERATORS`) send `fl.start` / `fl.stop`; everyone else sends
+`fl.request`, which waits for `fl.approve` / `fl.reject` from an operator (unless `FL_APPROVAL=auto`).
+`FL_MAX_ROUNDS`, `FL_COOLDOWN_S`, `FL_CONTROL_ZONES` and `FL_SCHEDULE_S` are enforced by the aggregator, and
+every decision is appended to `<FL_MODEL_DIR>/<job>-audit.jsonl`. The zone MCP server's `fl_request_start` /
+`fl_request_stop` send `fl.request`, so an LLM agent can propose training but not start it.
 
 Parameters travel as a base64 `.npz` (float32) inside the message. The aggregator re-reads the directory every
 round. A client that is busy (a redelivered `fl.fit`), times out or returns bad parameters counts as a failure
@@ -101,6 +122,7 @@ ask (own zone only) → diagnose (MCP) → student.classify → confident and a 
   changes. The local LLM writes the explanation, but the decision does not depend on it.
 * **Verification** means the doctor re-runs the checks after applying the fix and the external (and internal)
   request now succeeds. Only verified fixes are shared.
-* **Other zones** can only consult (their observation, classified by our model, plus our verified fixes) and
-  push fixes. A pushed fix is stored as verified by the *sending* zone only, and is not applied until the local
+* **Other zones** can consult (their observation, classified by our model, plus our verified fixes), ask in
+  plain words (``ask`` from another zone gets *advice*: the error text in the question is classified, and our
+  verified or catalog fix is returned; nothing runs on this machine) and push fixes. A pushed fix is stored as verified by the *sending* zone only, and is not applied until the local
   doctor verifies it.

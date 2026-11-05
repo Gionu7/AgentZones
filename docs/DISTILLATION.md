@@ -57,7 +57,7 @@ python -m proxy_doctor.distill.train_student --data data/distill.jsonl --out mod
 synthetic benchmark. To use a student, set either of these:
 
 * `agents[].options.model_path: models/student.npz` uses it as a fixed model.
-* `federated.data.init_from: models/student.npz` starts federated rounds from it.
+* `PD_INIT_FROM=/path/to/models/student.npz` on the aggregator starts federated rounds from it.
 
 The script also logs how often the teacher disagrees with the generator. This is a useful signal to clean up
 either the generator or the teacher prompt.
@@ -82,18 +82,35 @@ Or as an Azure ML job:
 az ml job create -f deploy/azureml/finetune-job.yml -g <rg> -w <ws>
 ```
 
-Then convert to GGUF and serve it locally:
+Then convert to GGUF:
 
 ```bash
 python llama.cpp/convert_hf_to_gguf.py models/proxy-doctor-1.5b/merged --outtype q8_0 \
     --outfile models/proxy-doctor-1.5b.gguf
 ```
 
+Use it in a zone (the `models/` folder is mounted as `/local-models`):
+
 ```bash
-ollama create proxy-doctor -f proxy_doctor/distill/Modelfile
+MODEL_NAME=proxy-doctor MODEL_SOURCE=/local-models/proxy-doctor-1.5b.gguf COMPOSE_PROFILES=llm scripts/zone.sh az
 ```
 
-Finally, start the zone with `MODEL_NAME=proxy-doctor` (and `COMPOSE_PROFILES=llm`).
+On a laptop:
+
+```bash
+agentzone laptop --model proxy-doctor --model-source models/proxy-doctor-1.5b.gguf
+```
+
+To share it through the Azure ML registry, register the GGUF once, and download it once where it is needed
+(the zones themselves never talk to Azure ML; see [MODELS.md](MODELS.md)):
+
+```bash
+az ml model create --registry-name <registry> --name proxy-doctor --version 1 --path models/proxy-doctor-1.5b.gguf --type custom_model
+```
+
+```bash
+az ml model download --registry-name <registry> --name proxy-doctor --version 1 --download-path models/
+```
 
 ## 4. Federated learning across zones
 

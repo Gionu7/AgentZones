@@ -15,7 +15,9 @@ Story
   3. Consult         az hits the same problem, is unsure, consults the other zones and reuses b's fix.
   4. Federated       cn starts a run of the aggregator in b; clients in all three zones train the
                      Proxy Doctor model on their own data; no data leaves a zone.
-  5. Security        a spoke with the wrong token is turned away.
+  5. LLM request     an assistant asks for another run through the MCP tools; it waits until an
+                     operator approves it, and everything lands in the audit log.
+  6. Security        a spoke with the wrong token is turned away.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import json
 import logging
 import sys
 import tempfile
@@ -63,8 +66,20 @@ class Server:
         await self.task
 
 
-async def gateway(stack, **kw) -> tuple[Gateway, str, str | None]:
-    s = GatewaySettings(host="127.0.0.1", port=free_port(), hub_port=free_port(), poll_wait_s=10,
+def port_or_free(port: int) -> int:
+    import socket
+    with socket.socket() as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # like uvicorn: TIME_WAIT is fine
+        try:
+            s.bind(("127.0.0.1", port))
+            return port
+        except OSError:
+            return free_port()
+
+
+async def gateway(stack, port: int = 0, hub_port: int = 0, **kw) -> tuple[Gateway, str, str | None]:
+    s = GatewaySettings(host="127.0.0.1", port=port_or_free(port) if port else free_port(),
+                        hub_port=port_or_free(hub_port) if hub_port else free_port(), poll_wait_s=10,
                         register_interval_s=2, **kw)
     gw = Gateway(s)
     await stack.enter_async_context(Server(local_app(gw), s.port))
@@ -83,7 +98,7 @@ async def agent(stack, gw_url: str, name: str, impl: str, **env) -> None:
     await stack.enter_async_context(Server(host.app(), port))
 
 
-async def main(keep: bool, rounds: int) -> int:
+async def main(keep: bool, rounds: int, llm: bool = False) -> int:
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     work = Path(tempfile.mkdtemp(prefix="agentzones-demo-"))
     ok = True
@@ -95,11 +110,13 @@ async def main(keep: bool, rounds: int) -> int:
 
         proxy = await stack.enter_async_context(ForwardProxy())
         gws, urls = {}, {}
-        gws["az"], urls["az"], hub_url = await gateway(stack, zone="az", role="hub", spoke_tokens=TOKENS)
-        gws["cn"], urls["cn"], _ = await gateway(stack, zone="cn", role="spoke", hub_url=hub_url,
+        fixed = {"az": 8080, "b": 8081, "cn": 8082, "hub": 9090} if keep else {}  # same ports as the Docker zones
+        gws["az"], urls["az"], hub_url = await gateway(stack, fixed.get("az", 0), fixed.get("hub", 0), zone="az",
+                                                       role="hub", spoke_tokens=TOKENS)
+        gws["cn"], urls["cn"], _ = await gateway(stack, fixed.get("cn", 0), zone="cn", role="spoke", hub_url=hub_url,
                                                  hub_token=TOKENS["cn"])
-        gws["b"], urls["b"], _ = await gateway(stack, zone="b", role="spoke", hub_url=hub_url, hub_token=TOKENS["b"],
-                                               hub_proxy=proxy.url)
+        gws["b"], urls["b"], _ = await gateway(stack, fixed.get("b", 0), zone="b", role="spoke", hub_url=hub_url,
+                                               hub_token=TOKENS["b"], hub_proxy=proxy.url)
         for z in ("az", "cn", "b"):
             model = work / z / "proxy-student.npz"
             await agent(stack, urls[z], "echo", "agentzones.agent:EchoAgent")
@@ -109,9 +126,23 @@ async def main(keep: bool, rounds: int) -> int:
             await agent(stack, urls[z], "pd-fl-client", "agentzones.fl.client:FLClient", ZONE=z,
                         FL_JOB="proxy-student", FL_TASK="tasks.proxy_student:ProxyStudentClient",
                         PD_PROFILE=PROFILES[z], FL_MODEL_OUT=str(model))
+        if llm:  # LLM agents in az, on MODEL_URL (default: Ollama on this machine)
+            import os
+            model = {"MODEL_URL": os.environ.get("MODEL_URL", "http://127.0.0.1:11434/v1"),
+                     "MODEL_NAME": os.environ.get("MODEL_NAME", "llama3.2:3b")}
+            zone_mcp = {"name": "zone_mcp", "command": sys.executable, "args": ["-m", "agentzones.cli", "mcp", "--stdio"],
+                        "env": {"GATEWAY_URL": urls["az"], "AGENT_NAME": "assistant"}}
+            await agent(stack, urls["az"], "assistant", "agentzones.llm_agent:LLMAgent", **model,
+                        MCP_SERVERS=json.dumps([zone_mcp]), TOOLS="zone.*,zone_mcp.fl_*")
+            code_mcp = {"name": "code", "command": sys.executable, "args": ["-m", "agentzones.code_mcp"], "env": {"CODE_ROOT": str(ROOT)}}
+            await agent(stack, urls["az"], "code-assistant", "agentzones.llm_agent:LLMAgent", **model, TOOLS="code.*",
+                        MCP_SERVERS=json.dumps([code_mcp]), AGENT_CAPABILITIES="code", MAX_STEPS="10",
+                        AGENT_DESCRIPTION="Answers questions about the Agent Zones code (read-only)",
+                        SYSTEM_PROMPT="You answer questions about the code in the code folder. Use search and read_file, "
+                                      "and cite file paths and line numbers.")
         await agent(stack, urls["b"], "pd-aggregator", "agentzones.fl.aggregator:FLAggregator",
                     FL_JOB="proxy-student", FL_STRATEGY="tasks.proxy_student:ProxyStudentStrategy",
-                    FL_ROUNDS=str(rounds), FL_MIN_CLIENTS="3", FL_AUTOSTART="0", FL_POLL_S="0.5",
+                    FL_ROUNDS=str(rounds), FL_MIN_CLIENTS="3", FL_AUTOSTART="0", FL_POLL_S="0.5", FL_MAX_ROUNDS="20",
                     FL_MODEL_DIR=str(work / "b" / "models"))
 
         h("1. Hub and spoke")
@@ -167,7 +198,31 @@ async def main(keep: bool, rounds: int) -> int:
             s = await send(urls[z], z, "proxy-doctor", {"type": "status"})
             print(f"  proxy-doctor@{z} now uses {DIM}{s['model']}{X}")
 
-        h("5. Security")
+        h("5. An LLM agent asks for more training (MCP tools); an operator decides")
+        from agentzones.mcp_gateway import build_server
+        mcp = build_server(urls["az"], name="assistant")  # what an LLM agent in az sees as MCP tools
+
+        def tool(name, **args):
+            res = mcp.call(name, args)
+            return json.loads(res["content"][0]["text"]) if not res["isError"] else {"error": res["content"][0]["text"]}
+        req = await asyncio.to_thread(tool, "fl_request_start", job="proxy-student", rounds=500,
+                                      reason="12 new verified 407 incidents since the last run")
+        print(f"  assistant@az: fl_request_start(rounds=500) -> pending {req['pending']}, state still {req['state']}")
+        r = await http.post(urls["az"] + "/send", json={"from_agent": "assistant", "target_zone": "b",
+                                                       "target_agent": "pd-aggregator", "payload": {"type": "fl.start"}})
+        print(f"  assistant@az sends fl.start directly -> {Y}{r.json()['error'][:60]}…{X}")
+        r = await send(urls["az"], "b", "pd-aggregator", {"type": "fl.approve", "id": req["pending"]})
+        print(f"  operator approves -> {G}run {r['run']} started{X}, rounds capped at {r['rounds']} ({r.get('note', '')})")
+        while (await send(urls["az"], "b", "pd-aggregator", {"type": "fl.status"}))["state"] != "done":
+            await asyncio.sleep(0.3)
+        st = await send(urls["az"], "b", "pd-aggregator", {"type": "fl.status"})
+        for a in st["audit"][-5:]:
+            print(f"  {DIM}audit{X} {a['who']:<22} {a['action']:<16} {a['outcome']}")
+        if keep:  # leave one waiting, so it can be approved on the dashboard
+            await asyncio.to_thread(tool, "fl_request_start", job="proxy-student", rounds=10,
+                                    reason="nightly retrain (approve me on the dashboard)")
+
+        h("6. Security")
         bad = HubClient(GatewaySettings(zone="b", role="spoke", hub_url=hub_url, hub_token="stolen-or-wrong"))
         try:
             await bad.call("GET", "/hub/directory")
@@ -180,6 +235,7 @@ async def main(keep: bool, rounds: int) -> int:
 
         print(f"\n{G if ok else R}{B}demo {'passed' if ok else 'FAILED'}{X}")
         if keep:
+            print(f"\n{B}Hub dashboard: {urls['az']}/{X}   (spokes: {urls['b']}/ and {urls['cn']}/)")
             print(f"\nZones keep running. Try:\n  curl -s {urls['cn']}/send -H 'content-type: application/json' "
                   "-d '{\"target_zone\":\"b\",\"target_agent\":\"pd-aggregator\",\"payload\":{\"type\":\"fl.status\"}}'"
                   f"\n  python -m agentzones.cli --gateway {urls['b']} directory\nCtrl+C to stop.")
@@ -192,8 +248,9 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--keep", action="store_true", help="leave the zones running")
     ap.add_argument("--rounds", type=int, default=5)
+    ap.add_argument("--llm", action="store_true", help="add LLM agents in az (assistant, code-assistant) on MODEL_URL")
     a = ap.parse_args()
     try:
-        sys.exit(asyncio.run(main(a.keep, a.rounds)))
+        sys.exit(asyncio.run(main(a.keep, a.rounds, a.llm)))
     except KeyboardInterrupt:
         pass

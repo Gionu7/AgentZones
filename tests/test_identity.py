@@ -89,3 +89,18 @@ async def test_directory_carries_version_and_accepts_and_send_all_reaches_every_
         replies = await sender.agent.gw.send_all("echo", {"hi": 2}, timeout=10, other_zones_only=True)
         assert [e["zone"] for e, _ in replies] == ["az"]
         assert await sender.agent.gw.send_all("nobody", {}) == []
+
+
+async def test_an_agent_cannot_pose_as_an_fl_operator(tmp_path):
+    async with contextlib.AsyncExitStack() as stack, httpx.AsyncClient(timeout=10) as http:
+        gw, url, _ = await stack.enter_async_context(run_gateway(stack, zone="z"))
+        await run_agent(stack, url, "agg", "agentzones.fl.aggregator:FLAggregator", FL_JOB="pd",
+                        FL_STRATEGY="tasks.proxy_student:ProxyStudentStrategy", FL_AUTOSTART="0",
+                        FL_MODEL_DIR=str(tmp_path))
+        rogue = await run_agent(stack, url, "assistant", "agentzones.agent:EchoAgent")
+        await registered(gw, "agg")
+        await registered(gw, "assistant")
+        r = await http.post(url + "/send", headers={"x-agent-token": rogue.agent.gw.agent_token},
+                            json={"from_agent": "operator", "target_agent": "agg", "payload": {"type": "fl.start"}})
+        assert "assistant is not an operator" in r.json()["error"]
+        assert gw.live_agents()["agg"]["accepts"]["fl.request"]

@@ -1,0 +1,10 @@
+# Added by scripts/zone.sh when AGENTZONES_GPU=1: give the zone's Ollama container the NVIDIA GPUs.
+# Needs the NVIDIA Container Toolkit on Linux, or Docker Desktop with WSL2 on Windows. On a Mac, run Ollama
+# natively instead (Docker cannot use the Apple GPU) and use COMPOSE_PROFILES=host-llm.
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - { driver: nvidia, count: all, capabilities: [gpu] }

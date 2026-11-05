@@ -57,7 +57,7 @@ def _bool(v: str | None, default: bool) -> bool:
 
 
 class ProxyDoctor(Agent):
-    capabilities = [CAPABILITY]
+    capabilities = [CAPABILITY, "chat"]
     description = "Diagnoses and fixes corporate proxy and certificate problems"
     accepts = {
         "ask": "{question, context?: {target, internal_url, error_text, simulate}}: own zone only -> diagnosis, fix",
@@ -133,8 +133,8 @@ class ProxyDoctor(Agent):
         if t == "status":
             return self.status()
         if t in ("ask", None):
-            if not msg.local:
-                return {"error": "proxy-doctor only diagnoses its own zone; other zones send pd.consult"}
+            if not msg.local:  # another zone: advice from the text only, never checks on this machine
+                return await self.advise(str(p.get("question", "")), msg.from_zone)
             return await self.ask(str(p.get("question", "")), p.get("context") or {})
         return self.unknown(t)
 
@@ -181,6 +181,23 @@ class ProxyDoctor(Agent):
         except Exception:
             return []
         return sorted({e["zone"] for e, r in replies if isinstance(r, dict) and r.get("ok")})
+
+    async def advise(self, question: str, zone: str) -> dict[str, Any]:
+        """A question from another zone: classify the error text in it and share what we know.
+        Runs no diagnostics here: this machine is not the one with the problem."""
+        d = self.model.classify({"tool_errors": [question], "question": question})
+        problem = d["problem"]
+        verified = [f for f in self.fixes.search(problem) if f["verified_by"]]
+        plan = ({"problem": problem, "summary": verified[0]["summary"], "steps": verified[0]["steps"],
+                 "source": f"verified by {', '.join(verified[0]['verified_by'])}"} if verified
+                else {**render_fix(problem, {}), "source": "catalog"})
+        result: dict[str, Any] = {"mode": "advice", "diagnosis": {**d, "local": d, "peers": []},
+                                  "description": DESCRIPTIONS[problem], "fix": plan, "verified": False,
+                                  "trace": [{"step": "classify the question text", "by": self.zone, **d}]}
+        result["answer"] = await self._explain(question, result) + (
+            f"\n\n(Based on the text of your question only: I ran no checks, and this is not your machine. "
+            f"For a real diagnosis, ask the proxy-doctor of zone {zone}.)")
+        return result
 
     # ------------------------------------------------------------------ own zone
     async def ask(self, question: str, context: dict[str, Any]) -> dict[str, Any]:

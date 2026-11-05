@@ -1,6 +1,7 @@
 # Zone az: the HUB (Azure VM, the only zone that accepts incoming connections).
 #   scripts/zone.sh az
 # On the VM: export GATEWAY_BIND=0.0.0.0 ZONE_B_TOKEN=... ZONE_CN_TOKEN=...  and allow inbound TCP 9090.
+# Laptops join as spokes too: EXTRA_SPOKE_TOKENS=laptop-alice=<token>,... (then `agentzone laptop` on each).
 name: az
 
 services:
@@ -9,7 +10,8 @@ services:
     environment:
       ZONE: az
       ROLE: hub
-      SPOKE_TOKENS: b=${ZONE_B_TOKEN:-dev-token-b},cn=${ZONE_CN_TOKEN:-dev-token-cn}
+      # EXTRA_SPOKE_TOKENS adds more spokes, e.g. laptops: "laptop-alice=<token>,laptop-bob=<token>"
+      SPOKE_TOKENS: b=${ZONE_B_TOKEN:-dev-token-b},cn=${ZONE_CN_TOKEN:-dev-token-cn},${EXTRA_SPOKE_TOKENS:-}
     ports:
       - "127.0.0.1:${ZONE_PORT:-8080}:8080"          # local API: this host only
       - "${GATEWAY_BIND:-127.0.0.1}:${HUB_PORT:-9090}:9090"   # hub API: spokes connect here
@@ -39,11 +41,16 @@ services:
 
   assistant:
     extends: { file: ../../zone/base.yml, service: assistant }
+  code-assistant:   # CODE_DIR (default: this repository) is mounted read-only
+    extends: { file: ../../zone/base.yml, service: code-assistant }
   ollama:
     extends: { file: ../../zone/base.yml, service: ollama }
     volumes: [ollama:/root/.ollama]
+  model-setup:
+    extends: { file: ../../zone/base.yml, service: model-setup }
+    volumes: [models-cache:/models-cache]
 
 networks:
   agent-mesh: { external: true }
 
-volumes: { mnist-data: {}, pd-data: {}, ollama: {} }
+volumes: { mnist-data: {}, pd-data: {}, ollama: {}, models-cache: {} }
