@@ -13,7 +13,7 @@ flowchart LR
     tools["MCP servers<br/>(stdio)"]
     llm["Ollama<br/>(COMPOSE_PROFILES=llm)"]
     gw -- "POST /message" --> agents
-    agents -- "register every 10 s,<br/>/directory, /send" --> gw
+    agents -- "register every 10 s,<br/>/directory, /send, send_all<br/>(with its X-Agent-Token)" --> gw
     agents --> tools
     agents -- "OpenAI API" --> llm
   end
@@ -63,7 +63,8 @@ sequenceDiagram
   GC->>H: GET /hub/poll (waits up to 20 s)
   GB->>P: GET /hub/poll
   P->>H: forwarded
-  A->>GB: POST /send {target_zone: cn, payload}
+  A->>GB: POST /send {target_zone: cn, payload} + X-Agent-Token
+  GB->>GB: from_agent = the name that token holds
   GB->>P: POST /hub/send (signed with b's token)
   P->>H: forwarded
   H->>H: check signature, from_zone = b, remember route

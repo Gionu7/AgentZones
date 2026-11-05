@@ -66,6 +66,15 @@ its gateway. Nothing needs to be configured.
   name gets it, which within ~10 s is normally the real one. Anything on the zone network can still call an
   agent's `POST /message` directly, bypassing the gateway; keep the zone network to the zone's own containers.
 
+```mermaid
+flowchart TD
+  reg(["POST /agents/register: name, url<br/>+ X-Agent-Token"]) --> held{"name held by<br/>another token?"}
+  held -- "no" --> ok["registered: this token now holds the name"]
+  held -- "yes" --> alive{"agent at the registered URL<br/>still reports the old identity<br/>on /health?"}
+  alive -- "yes" --> refuse["403: name taken<br/>(a rogue container cannot<br/>take over a running agent)"]
+  alive -- "no: restarted or gone" --> takeover["the new process<br/>takes the name over"]
+```
+
 ## What a proxy on the path can and cannot do
 
 | | plain HTTP (zone b today) | HTTPS to the hub |
