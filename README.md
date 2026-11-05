@@ -301,7 +301,8 @@ Other settings:
 - Hub requests are limited to 32 MB (`MAX_BODY` in gateway.py); raise it for large models.
 
 Details, including a traffic matrix: [docs/SECURITY.md](docs/SECURITY.md). Protocol and internals:
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Hackathon script: [docs/DEMO.md](docs/DEMO.md).
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Hackathon script: [docs/DEMO.md](docs/DEMO.md). Working on the
+code: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## Tests
 
@@ -313,6 +314,9 @@ The tests cover request signing and replay protection, hub routing and redeliver
 tool loop against a fake model, the MCP server, and three live zones over HTTP. In those, b's traffic goes
 through a proxy, including a proxy that tampers with messages. They also run Proxy Doctor across zones and a
 complete federated-learning run.
+
+Setting up a checkout, running zones while you change code, and what CI checks:
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## Repository layout
 
