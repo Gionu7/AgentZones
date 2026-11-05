@@ -29,6 +29,12 @@ log = logging.getLogger(__name__)
 
 class FLClient(Agent):
     description = "Federated learning client"
+    accepts = {
+        "fl.fit": "{job, round, parameters, config} -> {status: ok|busy|error, parameters, num_samples, metrics}",
+        "fl.evaluate": "{job, parameters, config} -> {status, num_samples, metrics}",
+        "fl.model": "{job, round, parameters}: the final global model -> {status, saved}",
+        "fl.status": "{} -> job, task, busy, history",
+    }
 
     def __init__(self, *a: Any, **kw: Any):
         super().__init__(*a, **kw)
@@ -52,7 +58,7 @@ class FLClient(Agent):
         if t == "fl.status":
             return self.status()
         if t not in ("fl.fit", "fl.evaluate", "fl.model"):
-            return {"error": f"unknown message type {t!r}", "accepts": ["fl.fit", "fl.evaluate", "fl.model", "fl.status"]}
+            return self.unknown(t)
         if p.get("job", self.job) != self.job:
             return {"status": "error", "error": f"this client serves job {self.job!r}"}
         if self.lock.locked():

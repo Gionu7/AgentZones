@@ -27,15 +27,16 @@ def build_server(gateway_url: str, token: str = "", name: str = "mcp") -> MiniMC
 
     @srv.tool()
     def list_agents(capability: str = "") -> list:
-        """List agents in all zones. capability filters, e.g. 'proxy-doctor' or 'fl-client:*'."""
+        """List agents in all zones. capability filters, e.g. 'proxy-doctor' or 'fl-client:*'.
+        Each agent's 'accepts' lists the message types it handles and what they contain."""
         r = http.get("/directory", params={"capability": capability} if capability else None)
         r.raise_for_status()
         return r.json()
 
     @srv.tool()
     def send_message(zone: str, agent: str, payload: dict, timeout: float = 60) -> Any:
-        """Send payload to agent in zone and return the reply. Most agents accept {"type": "ask", "question": "..."};
-        federated-learning aggregators accept {"type": "fl.status"}, {"type": "fl.start"}, {"type": "fl.stop"}."""
+        """Send payload to agent in zone and return the reply. Use a message type from the agent's 'accepts'
+        (see list_agents), e.g. {"type": "ask", "question": "..."} or {"type": "fl.status"}."""
         r = http.post("/send", json={"from_agent": name, "target_zone": zone, "target_agent": agent,
                                      "payload": payload, "timeout": timeout}, timeout=timeout + 10)
         if r.status_code >= 400:

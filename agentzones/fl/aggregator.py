@@ -40,6 +40,12 @@ def _bool(v: str | None, default: bool) -> bool:
 
 
 class FLAggregator(Agent):
+    accepts = {
+        "fl.start": "{rounds?, resume?}: start a run -> {ok, state, round, ...}",
+        "fl.stop": "{}: stop the current run -> {ok, state, ...}",
+        "fl.status": "{} -> job, state, round, rounds, history",
+    }
+
     def __init__(self, *a: Any, **kw: Any):
         super().__init__(*a, **kw)
         c = self.config
@@ -95,7 +101,7 @@ class FLAggregator(Agent):
                 self.state = "stopped"
                 log.info("run %d stopped by %s@%s", self.run_id, msg.from_agent, msg.from_zone)
             return {"ok": True, **self.status()}
-        return {"error": f"unknown message type {t!r}", "accepts": ["fl.start", "fl.stop", "fl.status"]}
+        return self.unknown(t)
 
     def start_run(self, rounds: int | None = None, resume: bool = False) -> None:
         if rounds:

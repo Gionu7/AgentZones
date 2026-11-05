@@ -59,6 +59,13 @@ def _bool(v: str | None, default: bool) -> bool:
 class ProxyDoctor(Agent):
     capabilities = [CAPABILITY]
     description = "Diagnoses and fixes corporate proxy and certificate problems"
+    accepts = {
+        "ask": "{question, context?: {target, internal_url, error_text, simulate}}: own zone only -> diagnosis, fix",
+        "pd.consult": "{question, observation}: classify another zone's diagnostics -> {answer, diagnosis, fixes}",
+        "pd.fix": "{fix}: a fix verified by the sending zone -> {ok, id}",
+        "fixes": "{problem?, text?} -> known fixes",
+        "status": "{} -> model, fixes",
+    }
 
     async def start(self) -> None:
         c = self.config
@@ -129,7 +136,7 @@ class ProxyDoctor(Agent):
             if not msg.local:
                 return {"error": "proxy-doctor only diagnoses its own zone; other zones send pd.consult"}
             return await self.ask(str(p.get("question", "")), p.get("context") or {})
-        return {"error": f"unknown message type {t!r}", "accepts": ["ask", "pd.consult", "pd.fix", "fixes", "status"]}
+        return self.unknown(t)
 
     # ------------------------------------------------------------------ other zones
     async def _consult(self, question: str, obs: dict[str, Any] | None) -> dict[str, Any]:
@@ -158,33 +165,22 @@ class ProxyDoctor(Agent):
 
     async def _consult_zones(self, question: str, obs: dict[str, Any]) -> list[dict[str, Any]]:
         try:
-            peers = [e for e in await self.gw.directory(CAPABILITY) if e["zone"] != self.zone]
+            replies = await self.gw.send_all(CAPABILITY, {"type": "pd.consult", "question": question,
+                                                          "observation": sanitize(obs)},
+                                             timeout=self.peer_timeout, other_zones_only=True)
         except Exception as exc:
             log.warning("directory unavailable: %s", exc)
             return []
-
-        async def one(e: dict[str, Any]) -> dict[str, Any]:
-            try:
-                r = await self.gw.send(e["zone"], e["agent"], {"type": "pd.consult", "question": question,
-                                                              "observation": sanitize(obs)}, timeout=self.peer_timeout)
-                return {**r, "zone": e["zone"]} if isinstance(r, dict) else {"zone": e["zone"], "error": str(r)}
-            except GatewayError as exc:
-                return {"zone": e["zone"], "error": str(exc)}
-        return list(await asyncio.gather(*(one(e) for e in peers)))
+        return [{**r, "zone": e["zone"]} if isinstance(r, dict) else {"zone": e["zone"], "error": str(r)}
+                for e, r in replies]
 
     async def _share_fix(self, fix: dict[str, Any]) -> list[str]:
         try:
-            peers = [e for e in await self.gw.directory(CAPABILITY) if e["zone"] != self.zone]
+            replies = await self.gw.send_all(CAPABILITY, {"type": "pd.fix", "fix": fix}, timeout=20,
+                                             other_zones_only=True)
         except Exception:
             return []
-
-        async def one(e: dict[str, Any]) -> str | None:
-            try:
-                r = await self.gw.send(e["zone"], e["agent"], {"type": "pd.fix", "fix": fix}, timeout=20)
-                return e["zone"] if isinstance(r, dict) and r.get("ok") else None
-            except GatewayError:
-                return None
-        return sorted({z for z in await asyncio.gather(*(one(e) for e in peers)) if z})
+        return sorted({e["zone"] for e, r in replies if isinstance(r, dict) and r.get("ok")})
 
     # ------------------------------------------------------------------ own zone
     async def ask(self, question: str, context: dict[str, Any]) -> dict[str, Any]:
